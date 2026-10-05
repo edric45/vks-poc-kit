@@ -16,7 +16,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
   name: se-cluster-001-addons
-  namespace: se-ns-argo
+  namespace: se-ns-vks
 spec:
   goTemplate: true
   # Fail on a typo in a template variable, instead of rendering an empty string.
@@ -47,7 +47,7 @@ spec:
         path: '{{ .path.path }}'
       destination:
         name: supervisor
-        namespace: se-ns-argo
+        namespace: se-ns-vks
       # Add-ons sync automatically: they are low-risk, since an add-on can be
       # removed and installed again. This is what makes "add a folder" enough.
       syncPolicy:

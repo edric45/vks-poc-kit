@@ -1,4 +1,4 @@
-# ArgoCD, running on the Supervisor in the se-ns-argo vSphere Namespace.
+# ArgoCD, running on the Supervisor in the se-ns-vks vSphere Namespace.
 #
 #   kubectl --context 172.17.10.2 apply -f supervisor/argocd.yaml
 #
@@ -12,7 +12,7 @@ apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
 kind: ArgoCD
 metadata:
   name: argocd
-  namespace: se-ns-argo
+  namespace: se-ns-vks
 spec:
   # Must be on the Supervisor's supported list. The list changes over time, and
   # an instance whose version drops off it reports Failed, even though its pods

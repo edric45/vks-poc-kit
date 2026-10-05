@@ -15,7 +15,7 @@ apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonConfig
 metadata:
   name: se-cluster-001-cert-manager
-  namespace: se-ns-argo
+  namespace: se-ns-vks
   annotations:
     # ArgoCD applies the config (wave 0) before the install (wave 1).
     argocd.argoproj.io/sync-wave: "0"
@@ -37,7 +37,7 @@ apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonInstall
 metadata:
   name: se-cluster-001-cert-manager
-  namespace: se-ns-argo
+  namespace: se-ns-vks
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:

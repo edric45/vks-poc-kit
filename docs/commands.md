@@ -121,9 +121,9 @@ The VM classes and storage bound to the namespace in vCenter. A cluster can
 only use these.
 
 ```sh
-$K -n se-ns-argo get virtualmachineclass
-$K -n se-ns-argo get storageclass
-$K -n se-ns-argo get resourcequota        # any limits on CPU, memory, storage
+$K -n se-ns-vks get virtualmachineclass
+$K -n se-ns-vks get storageclass
+$K -n se-ns-vks get resourcequota        # any limits on CPU, memory, storage
 ```
 
 ## VKS add-ons
@@ -141,9 +141,9 @@ $K -n vmware-system-vks-public get addonconfigdefinition <definition> -o yaml
 ## What is running in the namespace
 
 ```sh
-$K -n se-ns-argo get argocd,pods
-$K -n se-ns-argo get cluster,machines
-$K -n se-ns-argo get addoninstall,addonconfig
-$K -n se-ns-argo get vm,pvc
-$K -n se-ns-argo get events --sort-by=.lastTimestamp | tail -20   # what just happened
+$K -n se-ns-vks get argocd,pods
+$K -n se-ns-vks get cluster,machines
+$K -n se-ns-vks get addoninstall,addonconfig
+$K -n se-ns-vks get vm,pvc
+$K -n se-ns-vks get events --sort-by=.lastTimestamp | tail -20   # what just happened
 ```

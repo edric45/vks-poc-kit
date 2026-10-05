@@ -1,4 +1,4 @@
-# Workload cluster se-cluster-001, declared on the Supervisor in se-ns-argo.
+# Workload cluster se-cluster-001, declared on the Supervisor in se-ns-vks.
 #
 #   control plane  1 x best-effort-medium (2 vCPU / 8Gi)
 #                  disks: root, etcd 5Gi, containerd 20Gi, kubelet 20Gi
@@ -12,13 +12,13 @@
 #   kubectl --context 172.17.10.2 -n vmware-system-vks-public \
 #     get clusterclass builtin-generic-v3.7.0 -o yaml     # status.variables
 #
-# The VM classes and storage class must already be bound to se-ns-argo in vCenter:
-#   kubectl --context 172.17.10.2 -n se-ns-argo get virtualmachineclass,storageclass
+# The VM classes and storage class must already be bound to se-ns-vks in vCenter:
+#   kubectl --context 172.17.10.2 -n se-ns-vks get virtualmachineclass,storageclass
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
 metadata:
   name: se-cluster-001
-  namespace: se-ns-argo
+  namespace: se-ns-vks
   annotations:
     # Deleting a Cluster deletes all of its VMs. This stops ArgoCD from ever
     # doing that, whether by pruning or by deleting the Application. Tearing a

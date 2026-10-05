@@ -9,7 +9,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: se-cluster-001
-  namespace: se-ns-argo
+  namespace: se-ns-vks
   # No resources-finalizer: deleting this Application must never delete the
   # Cluster. (The Cluster's own Prune=false,Delete=false annotation guards it too.)
 spec:
@@ -24,7 +24,7 @@ spec:
       include: cluster.yaml
   destination:
     name: supervisor
-    namespace: se-ns-argo
+    namespace: se-ns-vks
   syncPolicy:
     syncOptions:
     - ServerSideApply=true

@@ -9,7 +9,7 @@ until it is understood.
 The top-level folder names **where a file is applied**:
 
 ```
-supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-argo
+supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-vks
   argocd.yaml   the ArgoCD instance
   clusters/
     se-cluster-001/
@@ -27,7 +27,7 @@ docs/         reference for the whole project
 
 ## Step 1: ArgoCD on the Supervisor
 
-**Before you start:** the vSphere Namespace `se-ns-argo` exists (created in
+**Before you start:** the vSphere Namespace `se-ns-vks` exists (created in
 vCenter), and you are logged in to the Supervisor.
 
 ```sh
@@ -39,7 +39,7 @@ kubectl --context 172.17.10.2 get argocdversions argocd-supported-versions -o ya
 
 ```sh
 kubectl --context 172.17.10.2 apply -f supervisor/argocd.yaml
-kubectl --context 172.17.10.2 -n se-ns-argo get argocd,pods -w
+kubectl --context 172.17.10.2 -n se-ns-vks get argocd,pods -w
 ```
 
 Wait for the ArgoCD resource to show `Ready`. Expect six pods: the
@@ -50,10 +50,10 @@ server, redis, and a redis init job that ends as `Completed`.
 
 ```sh
 # the UI address: EXTERNAL-IP of the argocd-server Service
-kubectl --context 172.17.10.2 -n se-ns-argo get svc argocd-server
+kubectl --context 172.17.10.2 -n se-ns-vks get svc argocd-server
 
 # the initial admin password
-kubectl --context 172.17.10.2 -n se-ns-argo get secret argocd-initial-admin-secret \
+kubectl --context 172.17.10.2 -n se-ns-vks get secret argocd-initial-admin-secret \
   -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
@@ -66,5 +66,5 @@ current one.
 ```sh
 kubectl --context 172.17.10.2 delete -f supervisor/argocd.yaml
 # the operator leaves these two behind
-kubectl --context 172.17.10.2 -n se-ns-argo delete secret argocd-initial-admin-secret argocd-redis
+kubectl --context 172.17.10.2 -n se-ns-vks delete secret argocd-initial-admin-secret argocd-redis
 ```

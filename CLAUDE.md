@@ -32,9 +32,8 @@ step-specific commands in README.md.
 
 ## Environment (SE lab)
 
-- Supervisor context `172.17.10.2`; vSphere Namespace `se-ns-argo`, created in
+- Supervisor context `172.17.10.2`; vSphere Namespace `se-ns-vks`, created in
   vCenter. ArgoCD and the workload clusters share it.
-- `se-jumpbox` (a VM in `se-ns-argo`) is unmanaged. Leave it alone.
 - Logins expire about every 10h. If `kubectl` returns Unauthorized, ask the
   user to log in again.
 - The earlier hand-built lab is `~/se-gitops` (tag `v0-lab-2026-10-04`). Use it
