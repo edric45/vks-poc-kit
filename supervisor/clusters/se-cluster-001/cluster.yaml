@@ -66,7 +66,10 @@ spec:
     - name: vsphereOptions
       value:
         persistentVolumes:
-          defaultStorageClass: vsan-default-storage-policy
+          # no defaultStorageClass: the default is chosen inside the cluster
+          # (se-cluster-001/storageclass-retain.yaml)
+          customizableStorageClassAnnotations:
+          - storageclass.kubernetes.io/is-default-class
     # Note: no cluster-level `volumes`. Each scope below declares its own
     # disks, sized for what that node type actually does.
 
