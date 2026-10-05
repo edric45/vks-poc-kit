@@ -1,0 +1,136 @@
+# Workload cluster se-cluster-01, declared on the Supervisor in se-ns-argo.
+#
+#   control plane  1 x best-effort-medium (2 vCPU / 8Gi)
+#                  disks: root, etcd 5Gi, containerd 20Gi, kubelet 20Gi
+#   workers        2 x best-effort-large  (4 vCPU / 16Gi), pool np01
+#                  disks: root, containerd 50Gi, kubelet 50Gi
+#
+# Meant to be synced by ArgoCD. To apply by hand instead:
+#   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-01/
+#
+# Every topology variable below is defined by the ClusterClass. To see them all:
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public \
+#     get clusterclass builtin-generic-v3.7.0 -o yaml     # status.variables
+#
+# The VM classes and storage class must already be bound to se-ns-argo in vCenter:
+#   kubectl --context 172.17.10.2 -n se-ns-argo get virtualmachineclass,storageclass
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: se-cluster-01
+  namespace: se-ns-argo
+  annotations:
+    # Deleting a Cluster deletes all of its VMs. This stops ArgoCD from ever
+    # doing that, whether by pruning or by deleting the Application. Tearing a
+    # cluster down is a human with kubectl.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  # Required: the Supervisor rejects a Cluster without services.cidrBlocks.
+  # Internal to the cluster, but must not overlap networks the pods need to
+  # reach (the Supervisor, vCenter, other VPCs).
+  clusterNetwork:
+    services:
+      cidrBlocks:
+      - 10.96.0.0/12
+    pods:
+      cidrBlocks:
+      - 192.168.156.0/20
+    serviceDomain: cluster.local
+
+  topology:
+    # The blueprint VKS provides. Offered here:
+    #   kubectl --context 172.17.10.2 -n vmware-system-vks-public get clusterclass
+    classRef:
+      name: builtin-generic-v3.7.0
+      namespace: vmware-system-vks-public
+
+    # A KubernetesRelease with READY and COMPATIBLE True:
+    #   kubectl --context 172.17.10.2 get kubernetesreleases
+    # v1.35.6 is what se-cluster-01 ran on in the v0 lab. v1.36.2 is also
+    # offered; moving to it is an upgrade (a rolling replacement of every node).
+    version: v1.35.6+vmware.2
+
+    # Cluster-wide defaults. vmClass and storageClass are required at this level
+    # even though both node scopes below override vmClass.
+    #
+    # How scopes combine: a value set under controlPlane or a worker pool
+    # REPLACES the cluster-level value for that variable; it does not merge.
+    variables:
+    - name: vmClass
+      value: best-effort-medium
+    # The storage class for every node's root disk.
+    - name: storageClass
+      value: vsan-default-storage-policy
+    # Marks this storage class as the default INSIDE the cluster, so PVCs that
+    # name no class still get a volume.
+    - name: vsphereOptions
+      value:
+        persistentVolumes:
+          defaultStorageClass: vsan-default-storage-policy
+    # Note: no cluster-level `volumes`. Each scope below declares its own
+    # disks, sized for what that node type actually does.
+
+    controlPlane:
+      # 1 for a lab. Use 3 for anything that must survive a node failure (etcd
+      # needs a majority); never 2.
+      replicas: 1
+      variables:
+        overrides:
+        - name: vmClass
+          value: best-effort-medium
+
+        # etcd's disk. The ClusterClass creates a dedicated volume at
+        # /var/lib/etcd sized maximumDBSizeGiB + 25% (room for compaction and
+        # defragmentation), and sets etcd's --quota-backend-bytes to match.
+        # The value can only ever be raised, never lowered, so start modest.
+        # etcd's own default quota is 2Gi.
+        - name: kubernetes
+          value:
+            etcdConfiguration:
+              maximumDBSizeGiB: 4
+
+        # Separate disks for containerd (image layers) and kubelet (pod
+        # ephemeral storage and emptyDir volumes), so filling either one cannot
+        # fill the root disk. The control plane runs only the system pods, so
+        # these are small.
+        #
+        # NEW compared with the v0 lab, which used etcdConfiguration on the
+        # control plane but no `volumes` there. Watch the first build.
+        - name: volumes
+          value:
+          - name: containerd
+            mountPath: /var/lib/containerd
+            capacity: 20Gi
+            storageClass: vsan-default-storage-policy
+          - name: kubelet
+            mountPath: /var/lib/kubelet
+            capacity: 20Gi
+            storageClass: vsan-default-storage-policy
+
+    workers:
+      machineDeployments:
+      # class: the worker template the ClusterClass defines (it has one,
+      # node-pool). name: this pool's name, unique within the cluster.
+      - class: node-pool
+        name: se-cluster-01-np01
+        replicas: 2
+        variables:
+          overrides:
+          - name: vmClass
+            value: best-effort-large
+          # Same idea as the control plane, sized for real workloads: images
+          # and emptyDir data live here. No etcd on workers.
+          - name: volumes
+            value:
+            - name: containerd
+              mountPath: /var/lib/containerd
+              capacity: 50Gi
+              storageClass: vsan-default-storage-policy
+            - name: kubelet
+              mountPath: /var/lib/kubelet
+              capacity: 50Gi
+              storageClass: vsan-default-storage-policy
+
+# Changing vmClass, storageClass, volumes, vsphereOptions or
+# kubernetes.etcdConfiguration triggers a ROLLOUT: VKS replaces the affected
+# nodes one at a time with new VMs. It does not resize them in place.

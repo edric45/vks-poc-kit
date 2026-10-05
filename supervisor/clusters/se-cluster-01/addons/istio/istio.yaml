@@ -1,0 +1,70 @@
+# Istio on se-cluster-01, SIDECAR mode, as a VKS add-on.
+#
+# Sidecar mode: every pod in the mesh gets an Envoy proxy container injected
+# next to it. A namespace joins the mesh with a label, and its pods must be
+# restarted to get the sidecar:
+#   kubectl label ns <ns> istio-injection=enabled
+#   kubectl -n <ns> rollout restart deploy
+#
+# Ingress will be the Gateway API (a Gateway with gatewayClassName: istio, for
+# which istiod creates an Envoy Deployment and a LoadBalancer Service on
+# demand), not the add-on's classic ingress gateway. So the classic gateways
+# are off below.
+#
+# Releases on offer:
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public get addonreleases | grep istio
+# Settings this release accepts (note the --- before vmware):
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public \
+#     get addonconfigdefinition istio.kubernetes.vmware.com.1.30.0---vmware.1-vks.1 -o yaml
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: se-cluster-01-istio
+  namespace: se-ns-argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  values:
+    istio:
+      # Sidecar mode = ambient off. Ambient mode (ztunnel, no sidecars) also
+      # needs istioCNI; sidecar mode does not.
+      ambientMode:
+        enabled: false
+      istioCNI:
+        enabled: false
+      gateways:
+        ingress:
+          enabled: false
+        egress:
+          enabled: false
+      # PERMISSIVE mesh-wide: meshed pods accept both mTLS and plain traffic.
+      # Tighten per namespace with a PeerAuthentication resource.
+      enableStrictMTLS: false
+      # Two istiod replicas, so the control plane survives one pod restarting.
+      pilot:
+        replicas: 2
+      # Envoy access logs to stdout, so `kubectl logs` shows each request.
+      meshConfig:
+        accessLogFile: /dev/stdout
+---
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: se-cluster-01-istio
+  namespace: se-ns-argo
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  addonRef:
+    name: istio
+  addonConfigNameTemplate: se-cluster-01-istio
+  clusters:
+  - selector:
+      matchLabels:
+        cluster.x-k8s.io/cluster-name: se-cluster-01
+  crossNamespaceSelection: Blocked
+  releaseFilter:
+    ref:
+      name: istio.kubernetes.vmware.com.1.30.0-vmware.1-vks.1
+  # Deleting this AddonInstall uninstalls Istio from the cluster.
+  stopMatchingBehavior: Delete

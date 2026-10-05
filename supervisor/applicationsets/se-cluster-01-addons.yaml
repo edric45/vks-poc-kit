@@ -1,0 +1,58 @@
+# One ArgoCD Application per add-on folder of se-cluster-01.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/applicationsets/se-cluster-01-addons.yaml
+#
+# Every folder under supervisor/clusters/se-cluster-01/addons/ becomes an
+# Application named se-cluster-01-<folder>, which applies that folder to the
+# Supervisor. VKS then installs the add-on into the cluster.
+#
+#   add a folder, push     -> new Application, synced automatically
+#   delete a folder, push  -> Application deleted; its finalizer deletes the
+#                             AddonInstall, so VKS uninstalls the add-on
+#
+# Needs: applicationSet.enabled in supervisor/argocd.yaml, the Supervisor
+# registered in ArgoCD as `supervisor`, and this repo added to ArgoCD.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: se-cluster-01-addons
+  namespace: se-ns-argo
+spec:
+  goTemplate: true
+  # Fail on a typo in a template variable, instead of rendering an empty string.
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - git:
+      repoURL: https://github.com/edric45/vks-poc-kit.git
+      revision: main
+      directories:
+      - path: supervisor/clusters/se-cluster-01/addons/*
+  template:
+    metadata:
+      # .path.basename is the folder name: cert-manager, istio, ...
+      name: 'se-cluster-01-{{ .path.basename }}'
+      labels:
+        cluster: se-cluster-01
+        kind: vks-addon
+      # Without this, deleting an Application would leave its add-on installed.
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    spec:
+      # The built-in project, which allows everything. A dedicated project can
+      # come later, to restrict repos and destinations.
+      project: default
+      source:
+        repoURL: https://github.com/edric45/vks-poc-kit.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        name: supervisor
+        namespace: se-ns-argo
+      # Add-ons sync automatically: they are low-risk, since an add-on can be
+      # removed and installed again. This is what makes "add a folder" enough.
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+        - ServerSideApply=true

@@ -1,0 +1,30 @@
+# The ArgoCD Application for the se-cluster-01 Cluster CR.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/applications/se-cluster-01.yaml
+#
+# Sync is MANUAL on purpose: a sync here creates, resizes or replaces VMs, so
+# a human reviews the diff and presses Sync. The add-ons are a separate
+# ApplicationSet (supervisor/applicationsets/), which syncs automatically.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: se-cluster-01
+  namespace: se-ns-argo
+  # No resources-finalizer: deleting this Application must never delete the
+  # Cluster. (The Cluster's own Prune=false,Delete=false annotation guards it too.)
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/edric45/vks-poc-kit.git
+    targetRevision: main
+    path: supervisor/clusters/se-cluster-01
+    directory:
+      # Only cluster.yaml. The addons/ subfolder belongs to the add-on apps;
+      # without this, a recursive read would apply the add-ons twice.
+      include: cluster.yaml
+  destination:
+    name: supervisor
+    namespace: se-ns-argo
+  syncPolicy:
+    syncOptions:
+    - ServerSideApply=true

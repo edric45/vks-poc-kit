@@ -1,0 +1,5 @@
+# never commit credentials or local state
+*.key
+*.pem
+kubeconfig*
+__pycache__/

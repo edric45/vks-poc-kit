@@ -1,0 +1,31 @@
+# ArgoCD, running on the Supervisor in the se-ns-argo vSphere Namespace.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/argocd.yaml
+#
+# The ArgoCD operator is built into the Supervisor, so there is nothing to
+# enable first: applying this resource is the whole install. The namespace
+# itself must already exist (created in vCenter).
+#
+# Every setting this resource accepts:
+#   kubectl --context 172.17.10.2 explain argocd.spec
+apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
+kind: ArgoCD
+metadata:
+  name: argocd
+  namespace: se-ns-argo
+spec:
+  # Must be on the Supervisor's supported list. The list changes over time, and
+  # an instance whose version drops off it reports Failed, even though its pods
+  # keep running. Check before installing or upgrading:
+  #   kubectl --context 172.17.10.2 get argocdversions argocd-supported-versions -o yaml
+  version: 3.4.4+vmware.1-vks.1
+
+  # Gives the ArgoCD UI an external IP (a LoadBalancer Service with a VIP
+  # from the Supervisor's load balancer). Without it, there is no way in.
+  enableLoadBalancer: true
+
+  # Deploys the ApplicationSet controller (one extra pod). An ApplicationSet
+  # generates Applications from a template, e.g. one per folder in git.
+  # Off by default.
+  applicationSet:
+    enabled: true
