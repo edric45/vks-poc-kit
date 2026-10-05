@@ -1,9 +1,9 @@
-# One ArgoCD Application per add-on folder of se-cluster-01.
+# One ArgoCD Application per add-on folder of se-cluster-001.
 #
-#   kubectl --context 172.17.10.2 apply -f supervisor/applicationsets/se-cluster-01-addons.yaml
+#   kubectl --context 172.17.10.2 apply -f supervisor/applicationsets/se-cluster-001-addons.yaml
 #
-# Every folder under supervisor/clusters/se-cluster-01/addons/ becomes an
-# Application named se-cluster-01-<folder>, which applies that folder to the
+# Every folder under supervisor/clusters/se-cluster-001/addons/ becomes an
+# Application named se-cluster-001-<folder>, which applies that folder to the
 # Supervisor. VKS then installs the add-on into the cluster.
 #
 #   add a folder, push     -> new Application, synced automatically
@@ -15,7 +15,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: se-cluster-01-addons
+  name: se-cluster-001-addons
   namespace: se-ns-argo
 spec:
   goTemplate: true
@@ -26,13 +26,13 @@ spec:
       repoURL: https://github.com/edric45/vks-poc-kit.git
       revision: main
       directories:
-      - path: supervisor/clusters/se-cluster-01/addons/*
+      - path: supervisor/clusters/se-cluster-001/addons/*
   template:
     metadata:
       # .path.basename is the folder name: cert-manager, istio, ...
-      name: 'se-cluster-01-{{ .path.basename }}'
+      name: 'se-cluster-001-{{ .path.basename }}'
       labels:
-        cluster: se-cluster-01
+        cluster: se-cluster-001
         kind: vks-addon
       # Without this, deleting an Application would leave its add-on installed.
       finalizers:

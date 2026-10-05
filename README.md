@@ -12,13 +12,15 @@ The top-level folder names **where a file is applied**:
 supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-argo
   argocd.yaml   the ArgoCD instance
   clusters/
-    se-cluster-01/
+    se-cluster-001/
       cluster.yaml               a workload cluster (to be synced by ArgoCD)
       addons/                    VKS add-ons for it, one folder per add-on
         cert-manager/
         istio/                   sidecar mode
+  applications/
+    se-cluster-001.yaml          the ArgoCD app for the cluster (manual sync)
   applicationsets/
-    se-cluster-01-addons.yaml    one ArgoCD app per folder in addons/
+    se-cluster-001-addons.yaml   one ArgoCD app per folder in addons/
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
 ```

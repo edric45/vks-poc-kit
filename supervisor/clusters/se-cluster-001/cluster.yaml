@@ -1,4 +1,4 @@
-# Workload cluster se-cluster-01, declared on the Supervisor in se-ns-argo.
+# Workload cluster se-cluster-001, declared on the Supervisor in se-ns-argo.
 #
 #   control plane  1 x best-effort-medium (2 vCPU / 8Gi)
 #                  disks: root, etcd 5Gi, containerd 20Gi, kubelet 20Gi
@@ -6,7 +6,7 @@
 #                  disks: root, containerd 50Gi, kubelet 50Gi
 #
 # Meant to be synced by ArgoCD. To apply by hand instead:
-#   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-01/
+#   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-001/
 #
 # Every topology variable below is defined by the ClusterClass. To see them all:
 #   kubectl --context 172.17.10.2 -n vmware-system-vks-public \
@@ -17,7 +17,7 @@
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
 metadata:
-  name: se-cluster-01
+  name: se-cluster-001
   namespace: se-ns-argo
   annotations:
     # Deleting a Cluster deletes all of its VMs. This stops ArgoCD from ever
@@ -46,7 +46,7 @@ spec:
 
     # A KubernetesRelease with READY and COMPATIBLE True:
     #   kubectl --context 172.17.10.2 get kubernetesreleases
-    # v1.35.6 is what se-cluster-01 ran on in the v0 lab. v1.36.2 is also
+    # v1.35.6 is what se-cluster-001 ran on in the v0 lab. v1.36.2 is also
     # offered; moving to it is an upgrade (a rolling replacement of every node).
     version: v1.35.6+vmware.2
 
@@ -112,7 +112,7 @@ spec:
       # class: the worker template the ClusterClass defines (it has one,
       # node-pool). name: this pool's name, unique within the cluster.
       - class: node-pool
-        name: se-cluster-01-np01
+        name: se-cluster-001-np01
         replicas: 2
         variables:
           overrides:
