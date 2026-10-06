@@ -61,8 +61,11 @@ spec:
     # The storage class for every node's root disk.
     - name: storageClass
       value: vsan-default-storage-policy
-    # Marks this storage class as the default INSIDE the cluster, so PVCs that
-    # name no class still get a volume.
+    # Hands the default-class annotation of the synced storage classes to us:
+    # VKS stops overwriting it, so the synced class can be set to "false" and
+    # se-cluster-001/storageclass-retain.yaml is the only default. Only
+    # annotations and labels can be handed over this way; a synced class's
+    # reclaimPolicy is immutable, hence the separate Retain class.
     - name: vsphereOptions
       value:
         persistentVolumes:
