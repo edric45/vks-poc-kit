@@ -17,6 +17,7 @@ supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-v
       addons/                    VKS add-ons for it, one folder per add-on
         cert-manager/
         gatekeeper/              OPA engine only; policies go under se-cluster-001/
+        headlamp/                web UI, HTTPS through an Istio Gateway
         istio/                   sidecar mode
   applications/
     se-cluster-001.yaml          the ArgoCD app for the cluster (manual sync)
@@ -24,6 +25,7 @@ supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-v
     se-cluster-001-addons.yaml   one ArgoCD app per folder in addons/
 se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-cluster-001)
   storageclass-retain.yaml   vSAN default storage with reclaimPolicy Retain
+  istio-gatewayclass-defaults.yaml   seccomp for Istio gateway pods (Pod Security)
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
 ```

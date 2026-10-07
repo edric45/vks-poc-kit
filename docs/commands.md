@@ -147,3 +147,23 @@ $K -n se-ns-vks get addoninstall,addonconfig
 $K -n se-ns-vks get vm,pvc
 $K -n se-ns-vks get events --sort-by=.lastTimestamp | tail -20   # what just happened
 ```
+
+## ArgoCD: pick up a push now
+
+ArgoCD has no webhook from GitHub here, so it polls the repo every 3
+minutes. After a push, nothing happens for up to 3 minutes. To skip the wait
+for the add-on ApplicationSet (a new or removed folder under `addons/`):
+
+```sh
+$K -n se-ns-vks annotate applicationset se-cluster-001-addons \
+  argocd.argoproj.io/application-set-refresh=true --overwrite
+```
+
+This is the same signal a webhook would send; ArgoCD removes the annotation
+once it has refreshed. The `argocd` CLI has no refresh for ApplicationSets.
+
+For a single Application (a changed file inside an existing folder):
+
+```sh
+argocd app get se-ns-vks/<app> --refresh
+```
