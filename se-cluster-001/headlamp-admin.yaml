@@ -1,0 +1,38 @@
+# A login for Headlamp: a ServiceAccount with full rights in se-cluster-001.
+#
+#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/headlamp-admin.yaml
+#   kubectl --context se-cluster-001:se-cluster-001 -n headlamp create token headlamp-admin --duration 8h
+#
+# Applied INSIDE the workload cluster. Paste the token at Headlamp's login.
+#
+# Why not the add-on's own account: the Headlamp add-on (0.42.0-vmware.1-vks.1)
+# moves its ServiceAccount "headlamp" into namespace headlamp, but its
+# ClusterRoleBinding "headlamp-admin" still names kube-system/headlamp, which
+# does not exist. A token for headlamp/headlamp therefore has no rights, and
+# every Headlamp page says "You don't have permissions". Patching the add-on's
+# binding would be reverted by VKS; a separate account is not.
+#
+# Lab only: anyone holding a token is cluster-admin until it expires. For a
+# read-only login, bind the built-in "view" ClusterRole instead.
+#
+# Lives in the headlamp namespace, which the add-on creates and deletes:
+# uninstalling the add-on removes this account too (the binding remains).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: headlamp-admin
+  namespace: headlamp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  # Not "headlamp-admin": that name is taken by the add-on's broken binding.
+  name: headlamp-login-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: headlamp-admin
+  namespace: headlamp

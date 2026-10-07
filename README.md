@@ -26,6 +26,7 @@ supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-v
 se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-cluster-001)
   storageclass-retain.yaml   vSAN default storage with reclaimPolicy Retain
   istio-gatewayclass-defaults.yaml   seccomp for Istio gateway pods (Pod Security)
+  headlamp-admin.yaml        Headlamp login (works around the add-on's RBAC bug)
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
 ```

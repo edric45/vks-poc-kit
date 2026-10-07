@@ -15,10 +15,10 @@
 # If ADDRESS is 172.17.10.30, the stale Transit Gateway route makes it
 # unreachable; hold .30 with a placeholder Service first.
 #
-# Login: the add-on binds its own ServiceAccount "headlamp" to cluster-admin.
-# Log in with a short-lived token for it (lab only; anyone holding it is
-# cluster-admin until it expires):
-#   kubectl --context se-cluster-001:se-cluster-001 -n headlamp create token headlamp --duration 8h
+# Login: NOT the add-on's own ServiceAccount "headlamp". This release binds
+# cluster-admin to kube-system/headlamp, which does not exist, so that
+# account has no rights. Use the account from se-cluster-001/headlamp-admin.yaml:
+#   kubectl --context se-cluster-001:se-cluster-001 -n headlamp create token headlamp-admin --duration 8h
 #
 # Note: the add-on labels its namespace pod-security "privileged".
 #
