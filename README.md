@@ -16,6 +16,7 @@ supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-v
       cluster.yaml               a workload cluster (to be synced by ArgoCD)
       addons/                    VKS add-ons for it, one folder per add-on
         cert-manager/
+        gatekeeper/              OPA engine only; policies go under se-cluster-001/
         istio/                   sidecar mode
   applications/
     se-cluster-001.yaml          the ArgoCD app for the cluster (manual sync)

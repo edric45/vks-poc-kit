@@ -1,0 +1,53 @@
+# OPA Gatekeeper on se-cluster-001, as a VKS add-on.
+#
+# This release ships the policy ENGINE only: controller, audit, webhooks and
+# CRDs, plus built-in protection for the VKS system namespaces. It ships no
+# policies. ConstraintTemplates and Constraints are applied inside the
+# cluster, so they live under se-cluster-001/, not here.
+#
+# Pod-level security (privileged, root, capabilities, seccomp) is already
+# enforced by Pod Security Admission: VKS applies the "restricted" profile to
+# every unlabelled namespace. Gatekeeper is for what that profile cannot
+# express (allowed registries, required labels, image tags, ...).
+#
+# Releases on offer:
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public get addonreleases | grep gatekeeper
+# Settings this release accepts (note the --- before vmware):
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public \
+#     get addonconfigdefinition gatekeeper.kubernetes.vmware.com.3.22.2---vmware.1-vks.1 -o yaml
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: se-cluster-001-gatekeeper
+  namespace: se-ns-vks
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  values:
+    # The default is 3, but the cluster has 2 workers; a third replica only
+    # doubles up on one node. The admission webhook stays available while one
+    # replica restarts.
+    replicas: 2
+---
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: se-cluster-001-gatekeeper
+  namespace: se-ns-vks
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  addonRef:
+    name: gatekeeper
+  addonConfigNameTemplate: se-cluster-001-gatekeeper
+  clusters:
+  - selector:
+      matchLabels:
+        cluster.x-k8s.io/cluster-name: se-cluster-001
+  crossNamespaceSelection: Blocked
+  releaseFilter:
+    ref:
+      name: gatekeeper.kubernetes.vmware.com.3.22.2-vmware.1-vks.1
+  # Deleting this AddonInstall uninstalls Gatekeeper, and with it every
+  # ConstraintTemplate CRD and the Constraints built on them.
+  stopMatchingBehavior: Delete
