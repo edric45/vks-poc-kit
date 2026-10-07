@@ -31,7 +31,7 @@ spec:
       ambientMode:
         enabled: false
       istioCNI:
-        enabled: false
+        enabled: true
       gateways:
         ingress:
           enabled: false
