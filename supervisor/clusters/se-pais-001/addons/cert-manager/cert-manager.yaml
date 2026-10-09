@@ -1,0 +1,60 @@
+# cert-manager on se-pais-001, as a VKS add-on.
+#
+# Declared HERE, on the Supervisor; VKS then installs it INTO the cluster. That
+# is why it lives under supervisor/, not in a folder for the workload cluster.
+#
+#   AddonConfig   the settings
+#   AddonInstall  which add-on, which cluster, which release
+#
+# Releases on offer:
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public get addonreleases | grep cert-manager
+# Settings this release accepts (note the --- before vmware):
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public \
+#     get addonconfigdefinition cert-manager.kubernetes.vmware.com.1.20.2---vmware.1-vks.1 -o yaml
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: se-pais-001-cert-manager
+  namespace: se-pais-tp7mm
+  annotations:
+    # ArgoCD applies the config (wave 0) before the install (wave 1).
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  values:
+    namespace: cert-manager
+    # A self-signed ClusterIssuer: the root of a private CA chain, enough to
+    # issue certificates for lab gateways. Only self-signed issuers can be
+    # declared here; CA, Vault or ACME issuers are ordinary manifests applied
+    # inside the cluster.
+    issuers:
+    - name: selfsigned
+      self_signed:
+        private_key:
+          algorithm: RSA
+          size: 4096
+---
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: se-pais-001-cert-manager
+  namespace: se-pais-tp7mm
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  addonRef:
+    name: cert-manager
+  # The AddonConfig above.
+  addonConfigNameTemplate: se-pais-001-cert-manager
+  # Which cluster(s): every Cluster carries this label with its own name.
+  # If the cluster does not exist yet, the install simply waits for it.
+  clusters:
+  - selector:
+      matchLabels:
+        cluster.x-k8s.io/cluster-name: se-pais-001
+  crossNamespaceSelection: Blocked
+  # Pinned, so the version only changes with a commit.
+  releaseFilter:
+    ref:
+      name: cert-manager.kubernetes.vmware.com.1.20.2-vmware.1-vks.1
+  # Deleting this AddonInstall uninstalls cert-manager from the cluster.
+  stopMatchingBehavior: Delete

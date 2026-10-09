@@ -1,0 +1,31 @@
+# Defaults for every Gateway of GatewayClass "istio": adds a seccomp profile
+# to the gateway pods istiod creates for each Gateway.
+#
+#   kubectl --context se-pais-001:se-pais-001 apply -f se-pais-001/istio-gatewayclass-defaults.yaml
+#
+# Applied INSIDE the workload cluster, not on the Supervisor.
+#
+# Why: VKS enforces the Pod Security "restricted" profile in every unlabelled
+# namespace, and restricted requires a seccomp profile. Istio's gateway
+# template only sets one when gateways.seccompProfile is configured, and the
+# VKS Istio add-on leaves it empty. Without this, a Gateway gets a Deployment
+# whose pods are rejected, and never receives an address.
+#
+# istiod reads this ConfigMap by its label, and merges it into the Deployment
+# of every Gateway in the class, so app namespaces can stay restricted.
+# It must live in istio-system (Istio's root namespace).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-gatewayclass-defaults
+  namespace: istio-system
+  labels:
+    gateway.istio.io/defaults-for-class: istio
+data:
+  deployment: |
+    spec:
+      template:
+        spec:
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault

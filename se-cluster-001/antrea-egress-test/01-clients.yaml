@@ -1,0 +1,97 @@
+# Antrea Egress test, cluster side: test clients.
+#
+#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/antrea-egress-test/01-clients.yaml
+#
+# Applied INSIDE the workload cluster. Supervisor side (NSX subnet + observer):
+# supervisor/clusters/se-cluster-001/antrea-egress-test/egress-subnet.yaml
+#
+#   egress-test/client             gets the Egress (02-egress.yaml)
+#   egress-test/client-other-node  same, but forced onto the other worker, to
+#                                  show traffic is carried to the egress node
+#   egress-control/control         no Egress: leaves with its own node's IP
+#
+# All pods pass the cluster's default "restricted" Pod Security profile.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: egress-test
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  namespace: egress-test
+  labels:
+    app: egress-client
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: curl
+    image: docker.io/curlimages/curl:8.10.1
+    command: ["sleep", "infinity"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client-other-node
+  namespace: egress-test
+  labels:
+    app: egress-client-other
+spec:
+  # Never on the same node as "client", without naming nodes (names change on
+  # every rollout).
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app: egress-client
+        topologyKey: kubernetes.io/hostname
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: curl
+    image: docker.io/curlimages/curl:8.10.1
+    command: ["sleep", "infinity"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: egress-control
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: control
+  namespace: egress-control
+  labels:
+    app: egress-control
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: curl
+    image: docker.io/curlimages/curl:8.10.1
+    command: ["sleep", "infinity"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]

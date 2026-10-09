@@ -1,4 +1,4 @@
-# Istio on se-cluster-001, SIDECAR mode, as a VKS add-on.
+# Istio on se-pais-001, SIDECAR mode, as a VKS add-on.
 #
 # Sidecar mode: every pod in the mesh gets an Envoy proxy container injected
 # next to it. A namespace joins the mesh with a label, and its pods must be
@@ -19,8 +19,8 @@
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonConfig
 metadata:
-  name: se-cluster-001-istio
-  namespace: se-ns-vks
+  name: se-pais-001-istio
+  namespace: se-pais-tp7mm
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -53,18 +53,18 @@ spec:
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonInstall
 metadata:
-  name: se-cluster-001-istio
-  namespace: se-ns-vks
+  name: se-pais-001-istio
+  namespace: se-pais-tp7mm
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   addonRef:
     name: istio
-  addonConfigNameTemplate: se-cluster-001-istio
+  addonConfigNameTemplate: se-pais-001-istio
   clusters:
   - selector:
       matchLabels:
-        cluster.x-k8s.io/cluster-name: se-cluster-001
+        cluster.x-k8s.io/cluster-name: se-pais-001
   crossNamespaceSelection: Blocked
   releaseFilter:
     ref:

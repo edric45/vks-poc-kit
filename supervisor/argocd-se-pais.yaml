@@ -1,0 +1,26 @@
+# ArgoCD for the Private AI work, in the vSphere Namespace se-pais-tp7mm.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/argocd-se-pais.yaml
+#
+# A second instance, not the one in se-ns-vks: the se-ns-vks instance is
+# registered for that namespace only, and se-pais-tp7mm belongs to a VCF
+# Automation organization (all-apps-3), so each namespace keeps its own ArgoCD
+# and nothing crosses between them.
+#
+# se-pais-tp7mm was created in VCF Automation (the generated suffix is
+# Automation's), not in vCenter. That puts it in its own NSX project and VPC,
+# away from the default project that se-ns-vks shares with other teams.
+apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
+kind: ArgoCD
+metadata:
+  name: argocd
+  namespace: se-pais-tp7mm
+spec:
+  # Must be on the Supervisor's supported list:
+  #   kubectl --context 172.17.10.2 get argocdversions argocd-supported-versions -o yaml
+  version: 3.4.4+vmware.1-vks.1
+  # The UI gets a VIP from this namespace's NSX project.
+  enableLoadBalancer: true
+  # One Application per add-on folder, as for se-cluster-001.
+  applicationSet:
+    enabled: true

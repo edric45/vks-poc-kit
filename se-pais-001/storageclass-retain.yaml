@@ -1,0 +1,35 @@
+# vSAN default storage, but volumes survive their PVC.
+#
+#   kubectl --context se-pais-001:se-pais-001 apply -f se-pais-001/storageclass-retain.yaml
+#
+# Applied INSIDE the workload cluster, not on the Supervisor.
+#
+# Retain on VKS: deleting the PVC leaves the cluster's PV as Released AND the
+# backing PVC in se-pais-tp7mm on the Supervisor, still counting against the
+# namespace's storage quota. Freeing the disk is two manual deletes: the PV
+# here, then its PVC in se-pais-tp7mm.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: vsan-default-storage-policy-retain
+  annotations:
+    # The synced vsan-default-storage-policy is marked default too, and VKS
+    # keeps it that way (cluster.yaml: vsphereOptions.persistentVolumes.
+    # defaultStorageClass). With two defaults, Kubernetes gives PVCs without a
+    # storageClassName the most recently created one, so this class wins only
+    # while it is newer than the synced one.
+    storageclass.kubernetes.io/is-default-class: "true"
+  # No isSyncedFromSupervisor label: that marks the classes VKS copies from
+  # the Supervisor and keeps in sync. This one is ours.
+provisioner: csi.vsphere.vmware.com
+parameters:
+  # The SUPERVISOR StorageClass that backs each volume, not the class of the
+  # same name in this cluster. Valid values: the policies assigned to se-pais-tp7mm
+  # in vCenter. Anything else leaves PVCs Pending.
+  #   kubectl --context 172.17.10.2 -n se-pais-tp7mm get storagepolicyquota
+  svStorageClass: vsan-default-storage-policy
+reclaimPolicy: Retain
+# Matches the Supervisor class above. For WaitForFirstConsumer, point
+# svStorageClass at vsan-default-storage-policy-latebinding instead.
+volumeBindingMode: Immediate
+allowVolumeExpansion: true

@@ -9,8 +9,10 @@ until it is understood.
 The top-level folder names **where a file is applied**:
 
 ```
-supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-vks
+supervisor/   applied to the Supervisor (context 172.17.10.2); each file names its
+              namespace: se-ns-vks (vCenter-made) or se-pais-tp7mm (Automation-made)
   argocd.yaml   the ArgoCD instance
+  argocd-se-pais.yaml   a second ArgoCD, in se-pais-tp7mm (VCF Automation namespace, for PAIS)
   clusters/
     se-cluster-001/
       cluster.yaml               a workload cluster (to be synced by ArgoCD)
@@ -19,16 +21,25 @@ supervisor/   applied to the Supervisor (context 172.17.10.2), namespace se-ns-v
         gatekeeper/              OPA engine only; policies go under se-cluster-001/
         headlamp/                web UI, HTTPS through an Istio Gateway
         istio/                   sidecar mode
+      antrea-egress-test/        NSX subnet + observer for the Antrea Egress test (by hand)
+    se-pais-001/                 the PAIS support cluster in se-pais-tp7mm, same add-ons
   applications/
     se-cluster-001.yaml          the ArgoCD app for the cluster (manual sync)
+    se-pais-001.yaml             the same for se-pais-001 (Application lives in se-pais-tp7mm)
   applicationsets/
     se-cluster-001-addons.yaml   one ArgoCD app per folder in addons/
+    se-pais-001-addons.yaml      the same for se-pais-001
 se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-cluster-001)
   storageclass-retain.yaml   vSAN default storage with reclaimPolicy Retain
   istio-gatewayclass-defaults.yaml   seccomp for Istio gateway pods (Pod Security)
   headlamp-admin.yaml        Headlamp login (works around the add-on's RBAC bug)
+  kube-bench-cis-2.0.yaml    one-off CIS Kubernetes Benchmark scan (docs/cis-scan.md)
+  antrea-egress-test/        Antrea Egress test: clients, egress IP pool, Egress
+se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
+  storageclass-retain.yaml, istio-gatewayclass-defaults.yaml, headlamp-admin.yaml   as for se-cluster-001
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
+  cis-scan.md   CIS benchmark scan: how to run, results on this lab, keeping it current
 ```
 
 ## Step 1: ArgoCD on the Supervisor

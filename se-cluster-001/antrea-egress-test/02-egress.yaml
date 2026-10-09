@@ -1,0 +1,53 @@
+# Antrea Egress test, cluster side: the egress IP pool and the Egress.
+#
+#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/antrea-egress-test/02-egress.yaml
+#   kubectl --context se-cluster-001:se-cluster-001 get egress egress-test     # EGRESSIP and NODE
+#
+# Apply AFTER the Supervisor side is Ready. Every address below comes from NSX,
+# and NSX chooses them, so check both each time and edit this file to match:
+#   gateway, prefixLength   from the Subnet:
+#     kubectl --context 172.17.10.2 -n se-ns-vks get subnet egress-test \
+#       -o jsonpath='{.status.networkAddresses} {.status.gatewayAddresses}{"\n"}'
+#   ipRanges, egressIP      from the SubnetIPReservation (reserved, so NSX never
+#                           hands them to anything else):
+#     kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-test \
+#       -o jsonpath='{.status.ips}{"\n"}'
+# Last run (2026-10-08): network 172.30.0.32/28, gateway 172.30.0.33,
+# reserved 172.30.0.34-172.30.0.39.
+#
+# The pool must exist before the Egress (Antrea's webhook rejects an Egress
+# that names a missing pool), which is why it comes first in this file.
+apiVersion: crd.antrea.io/v1beta1
+kind: ExternalIPPool
+metadata:
+  name: egress-test
+spec:
+  # Exactly the addresses NSX reserved (SubnetIPReservation status.ips). If
+  # NSX returns separate addresses rather than a block, list one range each.
+  ipRanges:
+  - start: 172.30.0.34
+    end: 172.30.0.39
+  # EgressSeparateSubnet: the egress IP lives on its own subnet, reached on a
+  # VLAN sub-interface. vlan must match vlanTrafficTag in the binding.
+  subnetInfo:
+    gateway: 172.30.0.33
+    prefixLength: 28
+    vlan: 101
+  # Workers only: keep egress traffic off the control plane.
+  nodeSelector:
+    matchExpressions:
+    - key: node-role.kubernetes.io/control-plane
+      operator: DoesNotExist
+---
+apiVersion: crd.antrea.io/v1beta1
+kind: Egress
+metadata:
+  name: egress-test
+spec:
+  appliedTo:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: egress-test
+  externalIPPool: egress-test
+  # Fixed so firewall rules can name it; omit to let Antrea pick from the pool.
+  egressIP: 172.30.0.34

@@ -1,0 +1,82 @@
+# Antrea Egress test for se-cluster-001, Supervisor side (namespace se-ns-vks).
+# The cluster side is se-cluster-001/antrea-egress-test/.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-subnet.yaml
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnet egress-test \
+#     -o jsonpath='{.status.networkAddresses} {.status.gatewayAddresses}{"\n"}'
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-test -o jsonpath='{.status.ips}{"\n"}'
+#
+# Not synced by ArgoCD (the add-on ApplicationSet only reads addons/*, the
+# cluster Application only cluster.yaml). Applied by hand for the test.
+#
+# Why a separate Subnet: on VKS with NSX VPC, egress IPs must be addresses NSX
+# knows about, or NSX drops the traffic. Broadcom's method (EgressSeparateSubnet,
+# already enabled in the cluster's Antrea config) is: NSX allocates a Subnet,
+# a SubnetConnectionBindingMap attaches it to the cluster's SubnetSet on a VLAN,
+# and Antrea uses that CIDR/gateway/VLAN in an ExternalIPPool.
+apiVersion: crd.nsx.vmware.com/v1alpha1
+kind: Subnet
+metadata:
+  name: egress-test
+  namespace: se-ns-vks
+spec:
+  # Private: the egress IP is seen inside the VPC (the observer below), but
+  # traffic leaving the VPC is still translated to the VPC's outbound address.
+  # Public would keep the egress IP end to end, but draws from the shared
+  # external pool that has stale routes for .27 and .30.
+  accessMode: Private
+  ipv4SubnetSize: 16
+---
+# The egress IPs, reserved in NSX. The Subnet has static IP allocation on, so
+# NSX would hand its addresses to anything attached to it; reserved addresses
+# it never hands out. NSX picks the addresses (you choose only how many) and
+# lists them in status.ips, which is what 02-egress.yaml must use:
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-test -o jsonpath='{.status.ips}{"\n"}'
+apiVersion: crd.nsx.vmware.com/v1alpha1
+kind: SubnetIPReservation
+metadata:
+  name: egress-test
+  namespace: se-ns-vks
+spec:
+  subnet: egress-test
+  numberOfIPs: 6
+---
+apiVersion: crd.nsx.vmware.com/v1alpha1
+kind: SubnetConnectionBindingMap
+metadata:
+  name: egress-test
+  namespace: se-ns-vks
+spec:
+  subnetName: egress-test
+  # The cluster's node SubnetSet: kubectl -n se-ns-vks get subnetset
+  targetSubnetSetName: se-cluster-001-fxfqc
+  # Must be unique on the target SubnetSet; the ExternalIPPool uses the same tag.
+  vlanTrafficTag: 101
+---
+# Observer: a pod running directly on the Supervisor, in the same VPC, that
+# replies with the caller's source address. It shows which IP the cluster's
+# traffic arrives from. Reach it at <pod IP>:8080.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: egress-observer
+  namespace: se-ns-vks
+  labels:
+    app: egress-observer
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: whoami
+    image: docker.io/traefik/whoami:v1.10.3
+    # Non-root cannot bind port 80, whoami's default.
+    args: ["--port", "8080"]
+    ports:
+    - containerPort: 8080
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]

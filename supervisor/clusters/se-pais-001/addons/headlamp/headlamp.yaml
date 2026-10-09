@@ -1,0 +1,66 @@
+# Headlamp (Kubernetes web UI) on se-pais-001, as a VKS add-on, reached
+# over HTTPS through an Istio Gateway.
+#
+# With gatewayApi.enabled the add-on creates, in namespace "headlamp":
+#   Gateway   class istio, HTTPS :443 for `hostname` only, TLS ended at Envoy
+#   HTTPRoute hostname -> Service headlamp:80 (plain HTTP inside the cluster)
+#   Issuer + Certificate   self-signed, via the cert-manager add-on
+# and forces the Service to ClusterIP, so the Gateway holds the only VIP.
+#
+# The listener and route match `hostname` only, so open Headlamp BY NAME;
+# requests to the bare IP get no route. There is no lab DNS for it: add the
+# Gateway's address to /etc/hosts on your Mac:
+#   kubectl --context se-pais-001:se-pais-001 -n headlamp get gateway
+#   echo "<ADDRESS>  headlamp.se-pais-001.lab" | sudo tee -a /etc/hosts
+# The address comes from Avi tenant all-apps-3 and the 172.19.0.0/16 pool of
+# this namespace's Automation organization (not se-ns-vks's 172.17.10.x).
+#
+# Login: NOT the add-on's own ServiceAccount "headlamp". This release binds
+# cluster-admin to kube-system/headlamp, which does not exist, so that
+# account has no rights. Use the account from se-pais-001/headlamp-admin.yaml:
+#   kubectl --context se-pais-001:se-pais-001 -n headlamp create token headlamp-admin --duration 8h
+#
+# Note: the add-on labels its namespace pod-security "privileged".
+#
+# Releases on offer:
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public get addonreleases | grep headlamp
+# Settings this release accepts (note the --- before vmware):
+#   kubectl --context 172.17.10.2 -n vmware-system-vks-public \
+#     get addonconfigdefinition headlamp.kubernetes.vmware.com.0.42.0---vmware.1-vks.1 -o yaml
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: se-pais-001-headlamp
+  namespace: se-pais-tp7mm
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  values:
+    # Also the certificate's DNS name. Not in any DNS; see /etc/hosts above.
+    hostname: headlamp.se-pais-001.lab
+    gatewayApi:
+      enabled: true
+      gateway:
+        className: istio
+---
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: se-pais-001-headlamp
+  namespace: se-pais-tp7mm
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  addonRef:
+    name: headlamp
+  addonConfigNameTemplate: se-pais-001-headlamp
+  clusters:
+  - selector:
+      matchLabels:
+        cluster.x-k8s.io/cluster-name: se-pais-001
+  crossNamespaceSelection: Blocked
+  releaseFilter:
+    ref:
+      name: headlamp.kubernetes.vmware.com.0.42.0-vmware.1-vks.1
+  # Deleting this AddonInstall uninstalls Headlamp, its Gateway and its VIP.
+  stopMatchingBehavior: Delete
