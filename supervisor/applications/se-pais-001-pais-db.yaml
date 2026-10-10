@@ -1,0 +1,32 @@
+# The ArgoCD Application for PostgreSQL + pgvector (PAIS's database) inside
+# se-pais-001.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/applications/se-pais-001-pais-db.yaml
+#
+# Needs se-pais-001 registered in the se-pais ArgoCD under the name
+# se-pais-001, once (adds an argocd-manager ServiceAccount inside se-pais-001):
+#
+#   argocd --argocd-context se-pais cluster add se-pais-001:se-pais-001 --name se-pais-001 --yes
+#
+# Unlike the Cluster app, sync is automatic: nothing here creates VMs, and the
+# data survives a bad sync (the namespace is never pruned, the volume's
+# storage class is Retain).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: se-pais-001-pais-db
+  namespace: se-pais-tp7mm
+  # No resources-finalizer: deleting this Application leaves the database running.
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/edric45/vks-poc-kit.git
+    targetRevision: main
+    path: se-pais-001/pais-db
+  destination:
+    name: se-pais-001
+    namespace: pais-db
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

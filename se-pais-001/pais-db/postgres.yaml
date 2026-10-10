@@ -1,0 +1,118 @@
+# PostgreSQL with pgvector for Private AI Services (Agent Builder and data
+# indexing need it; PAIS does not ship one).
+#
+# Synced into se-pais-001 by the ArgoCD Application
+# supervisor/applications/se-pais-001-pais-db.yaml.
+#
+# The password is not in git (public repo), so ArgoCD never sees it. Create it
+# once, before or after the first sync (the pod waits for it), and keep it:
+# the PAIS activation asks for the same one.
+#
+#   kubectl --context se-pais-001:se-pais-001 create namespace pais-db
+#   kubectl --context se-pais-001:se-pais-001 -n pais-db create secret generic pais-db \
+#     --from-literal=password="$(openssl rand -hex 24)"
+#
+# PAIS runs in its own PAIS-managed cluster in se-pais-tp7mm, so it reaches
+# this database through a LoadBalancer VIP in the namespace's VPC, not a
+# cluster-internal Service.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pais-db
+  annotations:
+    # The namespace holds the hand-made password secret and the data volume:
+    # never let ArgoCD prune or delete it.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+---
+# Runs once, when the data directory is first created. The image ships the
+# extension; a database only gets it when someone creates it. pais is the
+# superuser here, so PAIS could do it too, but this way it never has to.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pais-db-init
+  namespace: pais-db
+data:
+  01-pgvector.sql: |
+    CREATE EXTENSION IF NOT EXISTS vector;
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: pais-db
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      # VKS enforces the "restricted" Pod Security level cluster-wide; the
+      # image runs fine as its own postgres user (999) without root.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: postgres
+        # pg17, not pg18: 18 moved the data directory layout in the image.
+        image: docker.io/pgvector/pgvector:0.8.7-pg17
+        ports:
+        - {name: postgres, containerPort: 5432}
+        env:
+        - {name: POSTGRES_USER, value: pais}
+        - {name: POSTGRES_DB, value: pais}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef: {name: pais-db, key: password}
+        # A subdirectory: initdb refuses a volume root that holds lost+found.
+        - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 500m, memory: 1Gi}
+          limits: {memory: 4Gi}
+        readinessProbe:
+          exec: {command: [pg_isready, -U, pais, -d, pais]}
+          periodSeconds: 10
+        livenessProbe:
+          exec: {command: [pg_isready, -U, pais, -d, pais]}
+          initialDelaySeconds: 30
+          periodSeconds: 20
+        volumeMounts:
+        - {name: data, mountPath: /var/lib/postgresql/data}
+        - {name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+      volumes:
+      - name: init
+        configMap: {name: pais-db-init}
+  # The cluster's default class (vsan-default-storage-policy-retain): the
+  # volume survives a deleted claim. 20Gi counts against se-pais-tp7mm's quota.
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests: {storage: 20Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: pais-db
+spec:
+  type: LoadBalancer
+  # A fixed, clean address: PAIS stores the database host, and many 172.19
+  # addresses carry stale NSX routes (vip-placeholder-19-* in se-pais-tp7mm
+  # hold those). Whether VKS passes loadBalancerIP through to the Supervisor
+  # is not yet tested here; if the Service stays Pending, remove the line.
+  loadBalancerIP: 172.19.0.24
+  selector: {app: postgres}
+  ports:
+  - {name: postgres, port: 5432, targetPort: 5432}

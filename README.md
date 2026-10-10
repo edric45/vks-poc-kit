@@ -27,6 +27,7 @@ supervisor/   applied to the Supervisor (context 172.17.10.2); each file names i
   applications/
     se-cluster-001.yaml          the ArgoCD app for the cluster (manual sync)
     se-pais-001.yaml             the same for se-pais-001 (Application lives in se-pais-tp7mm)
+    se-pais-001-pais-db.yaml     PAIS's database inside se-pais-001 (automatic sync)
   applicationsets/
     se-cluster-001-addons.yaml   one ArgoCD app per folder in addons/
     se-pais-001-addons.yaml      the same for se-pais-001
@@ -38,6 +39,7 @@ se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-
   antrea-egress-test/        Antrea Egress test: clients, egress IP pool, Egress
 se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
   storageclass-retain.yaml, istio-gatewayclass-defaults.yaml, headlamp-admin.yaml   as for se-cluster-001
+  pais-db/postgres.yaml      PostgreSQL + pgvector for PAIS on VIP 172.19.0.24, synced by ArgoCD (password by hand)
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
   cis-scan.md   CIS benchmark scan: how to run, results on this lab, keeping it current
