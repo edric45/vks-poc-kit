@@ -1,0 +1,36 @@
+# The external address of the ArgoCD in se-pais-tp7mm: 172.19.0.23.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/argocd-se-pais-vip.yaml
+#   https://172.19.0.23            (UI)
+#   argocd login 172.19.0.23 --username admin --insecure
+#
+# Why not the operator's own LoadBalancer (spec.enableLoadBalancer): it gave
+# argocd-server 172.19.0.5, and NSX still has stale tier-0 routes for .5 from
+# other Automation projects, so ~2 of 3 outside connections were lost. Avi
+# names the load balancer after the Service, so switching the operator's one
+# off and on returns the same .5. This separate Service asks for a clean
+# address explicitly; enableLoadBalancer is false in argocd-se-pais.yaml.
+#
+# Selects the same pods as the operator's argocd-server Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server-vip
+  namespace: se-pais-tp7mm
+spec:
+  type: LoadBalancer
+  # Chosen because NSX had no route for it (stale ones would break it).
+  # Check before reusing elsewhere:
+  #   tier-0 routing table for 172.19.0.23/32 must be empty or point only at
+  #   this project's link.
+  loadBalancerIP: 172.19.0.23
+  selector:
+    app.kubernetes.io/instance: release-name
+    app.kubernetes.io/name: argocd-server
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  - name: https
+    port: 443
+    targetPort: 8080

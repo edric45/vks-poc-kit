@@ -19,8 +19,10 @@ spec:
   # Must be on the Supervisor's supported list:
   #   kubectl --context 172.17.10.2 get argocdversions argocd-supported-versions -o yaml
   version: 3.4.4+vmware.1-vks.1
-  # The UI gets a VIP from this namespace's NSX project.
-  enableLoadBalancer: true
+  # Off on purpose: the operator's LoadBalancer got 172.19.0.5, which NSX
+  # routes badly (stale routes from other projects). The UI is exposed by
+  # argocd-se-pais-vip.yaml on a clean address instead.
+  enableLoadBalancer: false
   # One Application per add-on folder, as for se-cluster-001.
   applicationSet:
     enabled: true

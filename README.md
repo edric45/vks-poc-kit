@@ -13,6 +13,7 @@ supervisor/   applied to the Supervisor (context 172.17.10.2); each file names i
               namespace: se-ns-vks (vCenter-made) or se-pais-tp7mm (Automation-made)
   argocd.yaml   the ArgoCD instance
   argocd-se-pais.yaml   a second ArgoCD, in se-pais-tp7mm (VCF Automation namespace, for PAIS)
+  argocd-se-pais-vip.yaml   its UI/API address, 172.19.0.23 (operator's own LB is off: stale NSX routes)
   clusters/
     se-cluster-001/
       cluster.yaml               a workload cluster (to be synced by ArgoCD)
