@@ -2,7 +2,8 @@
 #
 #   control plane  1 x best-effort-medium (2 vCPU / 8Gi)
 #                  disks: root, etcd 5Gi, containerd 20Gi, kubelet 20Gi
-#   workers        2 x best-effort-xlarge (4 vCPU / 32Gi), pool np01
+#   workers        1 x best-effort-xlarge (4 vCPU / 32Gi), pool np01
+#                  (1 because of this namespace's storage quota, see replicas)
 #                  (more memory than se-cluster-001: PostgreSQL for PAIS Agent
 #                  Builder, MCP servers and agentgateway run here)
 #                  disks: root, containerd 50Gi, kubelet 50Gi
@@ -128,7 +129,14 @@ spec:
       # node-pool). name: this pool's name, unique within the cluster.
       - class: node-pool
         name: se-pais-001-np01
-        replicas: 2
+        # 1, not 2: se-pais-tp7mm is an Automation namespace with a storage
+        # quota of 200000Mi (~195Gi) on vsan-default-storage-policy. The
+        # control plane takes 65Gi and each worker 120Gi (root + 50 + 50), so a
+        # second worker is refused its disks ("insufficient storage quota").
+        # For 2 workers: raise the quota in Automation's namespace class, or
+        # move worker disks to the second policy (its own 200000Mi quota):
+        #   kubectl --context 172.17.10.2 -n se-pais-tp7mm get storagepolicyquota
+        replicas: 1
         variables:
           overrides:
           - name: vmClass
