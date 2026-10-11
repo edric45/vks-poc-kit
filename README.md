@@ -43,6 +43,7 @@ se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
   cis-scan.md   CIS benchmark scan: how to run, results on this lab, keeping it current
+  pais.md       Private AI Services: install, activation, fixes found on the way
 ```
 
 ## Step 1: ArgoCD on the Supervisor
