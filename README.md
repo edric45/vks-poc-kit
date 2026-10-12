@@ -22,7 +22,7 @@ supervisor/   applied to the Supervisor (context 172.17.10.2); each file names i
         gatekeeper/              OPA engine only; policies go under se-cluster-001/
         headlamp/                web UI, HTTPS through an Istio Gateway
         istio/                   sidecar mode
-      antrea-egress-test/        NSX subnet + observer for the Antrea Egress test (by hand)
+      antrea-egress-test/        NSX subnets (Private and Public) + observer for the Antrea Egress test (by hand)
     se-pais-001/                 the PAIS support cluster in se-pais-tp7mm, same add-ons
   pais/
     model-endpoints.yaml       PAIS model endpoints in se-pais-tp7mm (CPU, llama.cpp)
@@ -39,7 +39,7 @@ se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-
   istio-gatewayclass-defaults.yaml   seccomp for Istio gateway pods (Pod Security)
   headlamp-admin.yaml        Headlamp login (works around the add-on's RBAC bug)
   kube-bench-cis-2.0.yaml    one-off CIS Kubernetes Benchmark scan (docs/cis-scan.md)
-  antrea-egress-test/        Antrea Egress test: clients, egress IP pool, Egress
+  antrea-egress-test/        Antrea Egress test: clients, egress IP pools (Private, Public), Egress
 se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
   storageclass-retain.yaml, istio-gatewayclass-defaults.yaml, headlamp-admin.yaml   as for se-cluster-001
   pais-db/postgres.yaml      PostgreSQL + pgvector for PAIS on VIP 172.19.0.24, synced by ArgoCD (password by hand)
@@ -49,6 +49,7 @@ docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
   cis-scan.md   CIS benchmark scan: how to run, results on this lab, keeping it current
   pais.md       Private AI Services: install, activation, fixes found on the way
+  antrea-egress.md   Antrea Egress with a VLAN-backed NSX subnet: steps, YAML, results, Traceflow
 ```
 
 ## Step 1: ArgoCD on the Supervisor

@@ -1,10 +1,11 @@
-# Antrea Egress test for se-cluster-001, Supervisor side (namespace se-ns-vks).
+# Antrea Egress test, PRIVATE variant, Supervisor side (namespace se-ns-vks).
+# Public variant: egress-subnet-public.yaml.
 # The cluster side is se-cluster-001/antrea-egress-test/.
 #
 #   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-subnet.yaml
-#   kubectl --context 172.17.10.2 -n se-ns-vks get subnet egress-test \
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnet egress-private \
 #     -o jsonpath='{.status.networkAddresses} {.status.gatewayAddresses}{"\n"}'
-#   kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-test -o jsonpath='{.status.ips}{"\n"}'
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-private -o jsonpath='{.status.ips}{"\n"}'
 #
 # Not synced by ArgoCD (the add-on ApplicationSet only reads addons/*, the
 # cluster Application only cluster.yaml). Applied by hand for the test.
@@ -17,7 +18,7 @@
 apiVersion: crd.nsx.vmware.com/v1alpha1
 kind: Subnet
 metadata:
-  name: egress-test
+  name: egress-private
   namespace: se-ns-vks
 spec:
   # Private: the egress IP is seen inside the VPC (the observer below), but
@@ -31,23 +32,23 @@ spec:
 # NSX would hand its addresses to anything attached to it; reserved addresses
 # it never hands out. NSX picks the addresses (you choose only how many) and
 # lists them in status.ips, which is what 02-egress.yaml must use:
-#   kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-test -o jsonpath='{.status.ips}{"\n"}'
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-private -o jsonpath='{.status.ips}{"\n"}'
 apiVersion: crd.nsx.vmware.com/v1alpha1
 kind: SubnetIPReservation
 metadata:
-  name: egress-test
+  name: egress-private
   namespace: se-ns-vks
 spec:
-  subnet: egress-test
+  subnet: egress-private
   numberOfIPs: 6
 ---
 apiVersion: crd.nsx.vmware.com/v1alpha1
 kind: SubnetConnectionBindingMap
 metadata:
-  name: egress-test
+  name: egress-private
   namespace: se-ns-vks
 spec:
-  subnetName: egress-test
+  subnetName: egress-private
   # The cluster's node SubnetSet: kubectl -n se-ns-vks get subnetset
   targetSubnetSetName: se-cluster-001-fxfqc
   # Must be unique on the target SubnetSet; the ExternalIPPool uses the same tag.

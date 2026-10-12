@@ -1,16 +1,17 @@
-# Antrea Egress test, cluster side: the egress IP pool and the Egress.
+# Antrea Egress test, PRIVATE variant, cluster side: the egress IP pool and the
+# Egress for namespace egress-private.
 #
 #   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/antrea-egress-test/02-egress.yaml
-#   kubectl --context se-cluster-001:se-cluster-001 get egress egress-test     # EGRESSIP and NODE
+#   kubectl --context se-cluster-001:se-cluster-001 get egress egress-private     # EGRESSIP and NODE
 #
 # Apply AFTER the Supervisor side is Ready. Every address below comes from NSX,
 # and NSX chooses them, so check both each time and edit this file to match:
 #   gateway, prefixLength   from the Subnet:
-#     kubectl --context 172.17.10.2 -n se-ns-vks get subnet egress-test \
+#     kubectl --context 172.17.10.2 -n se-ns-vks get subnet egress-private \
 #       -o jsonpath='{.status.networkAddresses} {.status.gatewayAddresses}{"\n"}'
 #   ipRanges, egressIP      from the SubnetIPReservation (reserved, so NSX never
 #                           hands them to anything else):
-#     kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-test \
+#     kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-private \
 #       -o jsonpath='{.status.ips}{"\n"}'
 # Last run (2026-10-08): network 172.30.0.32/28, gateway 172.30.0.33,
 # reserved 172.30.0.34-172.30.0.39.
@@ -20,7 +21,7 @@
 apiVersion: crd.antrea.io/v1beta1
 kind: ExternalIPPool
 metadata:
-  name: egress-test
+  name: egress-private
 spec:
   # Exactly the addresses NSX reserved (SubnetIPReservation status.ips). If
   # NSX returns separate addresses rather than a block, list one range each.
@@ -42,12 +43,12 @@ spec:
 apiVersion: crd.antrea.io/v1beta1
 kind: Egress
 metadata:
-  name: egress-test
+  name: egress-private
 spec:
   appliedTo:
     namespaceSelector:
       matchLabels:
-        kubernetes.io/metadata.name: egress-test
-  externalIPPool: egress-test
+        kubernetes.io/metadata.name: egress-private
+  externalIPPool: egress-private
   # Fixed so firewall rules can name it; omit to let Antrea pick from the pool.
   egressIP: 172.30.0.34

@@ -1,0 +1,69 @@
+# Antrea Egress test, PUBLIC variant, cluster side: its own namespace
+# (egress-public) with its own Egress, so it runs side by side with the
+# Private variant (egress-private, 02-egress.yaml) and the no-Egress control
+# (egress-control). One Egress per namespace.
+#
+#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/antrea-egress-test/03-egress-public.yaml
+#   kubectl --context se-cluster-001:se-cluster-001 get egress                 # both egresses, IPs and nodes
+#
+# Needs the Supervisor side first: egress-subnet-public.yaml. Values from NSX
+# (2026-10-12): Subnet 172.17.10.32/28, gateway 172.17.10.33, reserved
+# 172.17.10.34-172.17.10.35. NSX advertises the subnet to the physical network
+# (the jump host learned 172.17.10.32/28 over BGP), so replies route back.
+apiVersion: crd.antrea.io/v1beta1
+kind: ExternalIPPool
+metadata:
+  name: egress-public
+spec:
+  ipRanges:
+  - start: 172.17.10.34
+    end: 172.17.10.35
+  subnetInfo:
+    gateway: 172.17.10.33
+    prefixLength: 28
+    # Must match vlanTrafficTag of the egress-public binding.
+    vlan: 102
+  nodeSelector:
+    matchExpressions:
+    - key: node-role.kubernetes.io/control-plane
+      operator: DoesNotExist
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: egress-public
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  namespace: egress-public
+  labels:
+    app: egress-public-client
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+  - name: curl
+    image: docker.io/curlimages/curl:8.10.1
+    command: ["sleep", "infinity"]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
+---
+apiVersion: crd.antrea.io/v1beta1
+kind: Egress
+metadata:
+  name: egress-public
+spec:
+  appliedTo:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: egress-public
+  externalIPPool: egress-public
+  # The source address a physical firewall rule can name.
+  egressIP: 172.17.10.34

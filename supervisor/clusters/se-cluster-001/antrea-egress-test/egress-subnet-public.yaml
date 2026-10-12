@@ -1,0 +1,53 @@
+# Antrea Egress test, PUBLIC variant, Supervisor side (namespace se-ns-vks).
+# Cluster side: se-cluster-001/antrea-egress-test/03-egress-public.yaml
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-subnet-public.yaml
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnet egress-public \
+#     -o jsonpath='{.status.networkAddresses} {.status.gatewayAddresses}{"\n"}'
+#   kubectl --context 172.17.10.2 -n se-ns-vks get subnetipreservation egress-public -o jsonpath='{.status.ips}{"\n"}'
+#
+# Why Public: a Private subnet's traffic is translated at the VPC gateway to
+# the VPC's single outbound address (defaultSNATIP 172.17.10.24, shared by
+# everything in se-ns-vks), so a physical firewall can never tell this
+# namespace apart. NSX routes a Public subnet without translation and
+# advertises it outside the VPC, so the Antrea egress IP itself reaches the
+# physical network, and replies route back to it.
+#
+# Cost: Public subnets are carved from the external IP block that all
+# namespaces in this NSX project share (172.17.10.0/24 here); 16 is the
+# smallest size NSX accepts. That block has stale routes on .27 and .30
+# (vip-placeholder-27 holds .27), so test the egress IP from outside before
+# relying on it.
+#
+# Kept next to the Private variant (egress-subnet.yaml): accessMode cannot be
+# changed on an existing Subnet.
+apiVersion: crd.nsx.vmware.com/v1alpha1
+kind: Subnet
+metadata:
+  name: egress-public
+  namespace: se-ns-vks
+spec:
+  accessMode: Public
+  ipv4SubnetSize: 16
+---
+# Two egress IPs: one for the Egress, one spare. NSX picks them; read them
+# from status.ips and use exactly those in 03-egress-public.yaml.
+apiVersion: crd.nsx.vmware.com/v1alpha1
+kind: SubnetIPReservation
+metadata:
+  name: egress-public
+  namespace: se-ns-vks
+spec:
+  subnet: egress-public
+  numberOfIPs: 2
+---
+apiVersion: crd.nsx.vmware.com/v1alpha1
+kind: SubnetConnectionBindingMap
+metadata:
+  name: egress-public
+  namespace: se-ns-vks
+spec:
+  subnetName: egress-public
+  targetSubnetSetName: se-cluster-001-fxfqc
+  # 101 is taken by the Private binding on this SubnetSet; tags must be unique.
+  vlanTrafficTag: 102
