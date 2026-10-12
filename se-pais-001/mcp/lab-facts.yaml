@@ -32,7 +32,7 @@ data:
         "172.19.0.24": "PostgreSQL + pgvector for PAIS",
         "172.19.0.25": "Private AI Services UI and API",
         "172.19.0.26": "PAIS-managed cluster API",
-        "172.19.0.27": "agentgateway (MCP)",
+        "172.19.0.27": "another organization's Avi virtual service (not ours; taken)",
     }
     STALE = {"172.19.0.5", "172.19.0.7", "172.19.0.11", "172.19.0.13", "172.19.0.15",
              "172.19.0.16", "172.19.0.18", "172.19.0.19", "172.19.0.20", "172.19.0.21"}
@@ -173,6 +173,10 @@ spec:
   template:
     metadata:
       labels: {app: lab-facts}
+      annotations:
+        # Bump when server.py changes: a ConfigMap update alone does not
+        # restart the pod, and Python has already loaded the old code.
+        code-version: "2"
     spec:
       # VKS enforces the "restricted" Pod Security level.
       securityContext:

@@ -1,5 +1,5 @@
 # agentgateway v1.6.0 (standalone, Apache-2.0): the only way into the MCP
-# servers. PAIS registers http://172.19.0.27/mcp, once per agent, each time
+# servers. PAIS registers http://<gateway VIP>/mcp, once per agent, each time
 # with that agent's API key as a secret "Authorization: Bearer <key>" header.
 #
 # Who may call what (mcpAuthorization below):
@@ -104,8 +104,11 @@ metadata:
   namespace: mcp
 spec:
   type: LoadBalancer
-  # Fixed and clean (no stale NSX route); PAIS stores this URL.
-  loadBalancerIP: 172.19.0.27
+  # No fixed address: 172.19.0.27 turned out to be held by another tenant's
+  # Avi virtual service (the 172.19 block is shared across organizations), and
+  # AKO silently never creates a VS for a taken address. Let Avi pick a free
+  # one; it stays as long as this Service exists. Check the new address for
+  # stale NSX routes (docs/pais.md) before registering it in PAIS.
   selector: {app: agentgateway}
   ports:
   - {name: mcp, port: 80, targetPort: 3000}

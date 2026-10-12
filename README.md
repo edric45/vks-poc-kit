@@ -43,7 +43,7 @@ se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-
 se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
   storageclass-retain.yaml, istio-gatewayclass-defaults.yaml, headlamp-admin.yaml   as for se-cluster-001
   pais-db/postgres.yaml      PostgreSQL + pgvector for PAIS on VIP 172.19.0.24, synced by ArgoCD (password by hand)
-  mcp/                       MCP servers for PAIS agents behind agentgateway on VIP 172.19.0.27
+  mcp/                       MCP servers for PAIS agents behind agentgateway (LoadBalancer VIP)
                              (lab-facts: own server; kubernetes-mcp: read-only; per-agent API keys)
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor

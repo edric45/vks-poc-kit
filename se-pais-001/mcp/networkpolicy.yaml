@@ -1,7 +1,7 @@
 # The network layer of the demo: the MCP servers accept traffic only from
 # agentgateway, so its keys and tool rules cannot be bypassed from inside the
 # cluster. agentgateway itself is open on its port (PAIS reaches it through
-# the 172.19.0.27 VIP; the client address arriving here is the load
+# its LoadBalancer VIP; the client address arriving here is the load
 # balancer's, so filtering it by source would not mean much).
 # Antrea enforces these; kubelet health probes are not blocked by them.
 apiVersion: networking.k8s.io/v1
