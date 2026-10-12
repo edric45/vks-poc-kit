@@ -165,5 +165,7 @@ Layers, each enforced on its own:
 PAIS Ready, UI reachable. Models in Harbor project se-pais-models:
 qwen/qwen2.5-1.5b-instruct:q4km and nomic/nomic-embed-text-v1.5:q8. Model
 endpoints qwen-chat and nomic-embed Ready (supervisor/pais/model-endpoints.yaml).
-Agent Builder login works. Next: an agent plus an MCP server, and controlling
-the traffic between them.
+Agent Builder login works. Agents (2026-10-12, lab): ops-agent answered
+"which pods run in pais-db" through kubernetes-mcp (gateway log: tools/call,
+target k8s, 200); docs-agent answers VIP and runbook questions through
+lab-facts and cannot see or call the Kubernetes tools or `list_vips`.
