@@ -140,7 +140,7 @@ Supervisor recommends none. It pushes fine against service 3.0.0.
 
 ```
 PAIS agent (inside pais-api, se-pais-tp7mm)
-  -> http://<gateway VIP>/mcp  + "Authorization: Bearer <that agent's key>"
+  -> http://172.19.0.28/mcp (gateway VIP, picked by Avi)  + "Authorization: Bearer <that agent's key>"
   -> agentgateway (se-pais-001, namespace mcp): API key -> agent name -> allowed tools
   -> lab-facts (own MCP server)      kubernetes-mcp (read-only, view role in pais-db and mcp)
 ```
