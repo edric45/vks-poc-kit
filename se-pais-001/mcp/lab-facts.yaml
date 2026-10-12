@@ -1,0 +1,213 @@
+# lab-facts: a small custom MCP server (idea 5). Plain Python standard
+# library, mounted from this ConfigMap, so there is no image to build and the
+# pod needs no package index at start-up.
+#
+# Reached only through agentgateway (networkpolicy.yaml); PAIS never calls it
+# directly.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lab-facts
+  namespace: mcp
+data:
+  server.py: |
+    """lab-facts: a minimal MCP server (Streamable HTTP, JSON responses only).
+
+    Standard library only, so the pod needs no package index at start-up. MCP
+    over Streamable HTTP is JSON-RPC 2.0 POSTed to one path: requests get a JSON
+    reply, notifications get 202. No SSE stream, so GET returns 405 (allowed by
+    the spec). Stateless: no session id is issued.
+    """
+    import json
+    import os
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"]
+
+    # Facts about the SE lab. Public addresses already in this repo; no secrets.
+    VIPS = {
+        "172.19.0.17": "se-pais-001 Kubernetes API",
+        "172.19.0.22": "Headlamp gateway on se-pais-001",
+        "172.19.0.23": "ArgoCD (se-pais) UI and API",
+        "172.19.0.24": "PostgreSQL + pgvector for PAIS",
+        "172.19.0.25": "Private AI Services UI and API",
+        "172.19.0.26": "PAIS-managed cluster API",
+        "172.19.0.27": "agentgateway (MCP)",
+    }
+    STALE = {"172.19.0.5", "172.19.0.7", "172.19.0.11", "172.19.0.13", "172.19.0.15",
+             "172.19.0.16", "172.19.0.18", "172.19.0.19", "172.19.0.20", "172.19.0.21"}
+    TIPS = {
+        "pais-db-ca": "PAIS 3.0 DB setup job needs key ca.crt in the UI-made secret "
+                      "self-managed-db-secret-*; add any PEM when SSL mode is Allow.",
+        "reservation": "vSphere Pods reserve their CPU/memory requests: give the org "
+                       "region quota and the namespace a reservation, not only a limit.",
+        "library-cert": "Subscribed content library downloads fail after Broadcom renews "
+                        "wp-content.broadcom.com's certificate: Edit Settings, accept it, resync.",
+        "oidc-client": "Give PAIS the client ID of its own relying party (redirect "
+                       "https://172.19.0.25/), not a Supervisor pinniped one.",
+        "harbor-mac": "macOS rejects Harbor's 10-year certificate (825-day rule): push "
+                      "models with the Linux pais binary from the jump host.",
+    }
+
+    TOOLS = [
+        {
+            "name": "check_vip",
+            "description": "Say whether a 172.19.0.x address is in use, blocked by a "
+                           "stale NSX route, or free in the SE lab.",
+            "inputSchema": {"type": "object",
+                            "properties": {"ip": {"type": "string", "description": "e.g. 172.19.0.30"}},
+                            "required": ["ip"]},
+            "annotations": {"readOnlyHint": True},
+        },
+        {
+            "name": "list_vips",
+            "description": "List every 172.19.0.x address in use in the SE lab and what it serves.",
+            "inputSchema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": True},
+        },
+        {
+            "name": "runbook_tip",
+            "description": "Return the fix for a known lab problem. Topics: " + ", ".join(TIPS),
+            "inputSchema": {"type": "object",
+                            "properties": {"topic": {"type": "string", "enum": list(TIPS)}},
+                            "required": ["topic"]},
+            "annotations": {"readOnlyHint": True},
+        },
+    ]
+
+
+    def call_tool(name, args):
+        if name == "check_vip":
+            ip = str(args.get("ip", "")).strip()
+            if ip in VIPS:
+                return f"{ip} is in use: {VIPS[ip]}."
+            if ip in STALE:
+                return f"{ip} has a stale NSX route; a placeholder Service holds it. Do not use."
+            return f"{ip} is not in use and had no stale route at the last check (2026-10-09)."
+        if name == "list_vips":
+            return "\n".join(f"{ip}  {what}" for ip, what in VIPS.items())
+        if name == "runbook_tip":
+            topic = str(args.get("topic", ""))
+            return TIPS.get(topic, f"Unknown topic. Known: {', '.join(TIPS)}")
+        raise KeyError(name)
+
+
+    def handle(msg):
+        """Return a JSON-RPC response dict, or None for a notification."""
+        method, mid = msg.get("method"), msg.get("id")
+        if mid is None:
+            return None
+        params = msg.get("params") or {}
+        if method == "initialize":
+            asked = params.get("protocolVersion")
+            result = {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
+                      "capabilities": {"tools": {"listChanged": False}},
+                      "serverInfo": {"name": "lab-facts", "version": "0.1.0"}}
+        elif method == "ping":
+            result = {}
+        elif method == "tools/list":
+            result = {"tools": TOOLS}
+        elif method == "tools/call":
+            try:
+                text, err = call_tool(params.get("name"), params.get("arguments") or {}), False
+            except KeyError:
+                return {"jsonrpc": "2.0", "id": mid,
+                        "error": {"code": -32602, "message": f"Unknown tool: {params.get('name')}"}}
+            result = {"content": [{"type": "text", "text": text}], "isError": err}
+        else:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Method not found: {method}"}}
+        return {"jsonrpc": "2.0", "id": mid, "result": result}
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code, body=None):
+            data = b"" if body is None else json.dumps(body).encode()
+            self.send_response(code)
+            if body is not None:
+                self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                return self._send(200, {"status": "ok"})
+            self._send(405 if self.path == "/mcp" else 404)
+
+        def do_DELETE(self):
+            self._send(405)
+
+        def do_POST(self):
+            if self.path != "/mcp":
+                return self._send(404)
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            except (ValueError, TypeError):
+                return self._send(400, {"jsonrpc": "2.0", "id": None,
+                                        "error": {"code": -32700, "message": "Parse error"}})
+            if isinstance(body, list):
+                replies = [r for r in (handle(m) for m in body) if r is not None]
+                return self._send(200, replies) if replies else self._send(202)
+            reply = handle(body)
+            self._send(202) if reply is None else self._send(200, reply)
+
+        def log_message(self, fmt, *args):
+            # One line per call, so `kubectl logs` shows which tool an agent used.
+            print(f"{self.address_string()} {fmt % args}", flush=True)
+
+
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", "8000"))
+        print(f"lab-facts MCP server on :{port}/mcp", flush=True)
+        ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-facts
+  namespace: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: lab-facts}
+  template:
+    metadata:
+      labels: {app: lab-facts}
+    spec:
+      # VKS enforces the "restricted" Pod Security level.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: server
+        image: docker.io/library/python:3.13-slim
+        command: [python, -u, /app/server.py]
+        env:
+        - {name: PORT, value: "8000"}
+        ports:
+        - {name: mcp, containerPort: 8000}
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8000}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 128Mi}
+        volumeMounts:
+        - {name: code, mountPath: /app, readOnly: true}
+      volumes:
+      - name: code
+        configMap: {name: lab-facts}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-facts
+  namespace: mcp
+spec:
+  selector: {app: lab-facts}
+  ports:
+  - {name: mcp, port: 8000, targetPort: 8000}

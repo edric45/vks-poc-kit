@@ -1,0 +1,44 @@
+# Model endpoints for Private AI Services in se-pais-tp7mm (CPU only).
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/pais/model-endpoints.yaml
+#   kubectl --context 172.17.10.2 -n se-pais-tp7mm get modelendpoints -w
+#
+# Each endpoint becomes a node pool (one VM per replica) in the PAIS-managed
+# cluster, so a new endpoint takes a VM boot before it serves. The models were
+# pushed to the regional Harbor with `vcf pais models push` (docs/pais.md); the
+# project is public, so no pullSecrets.
+#
+# CPU only: llama.cpp is the engine for GGUF files (the image ships with PAIS).
+# routingName is the model id in the OpenAI-compatible API.
+apiVersion: pais.vmware.com/v1alpha1
+kind: ModelEndpoint
+metadata:
+  name: qwen-chat
+  namespace: se-pais-tp7mm
+spec:
+  type: Completions
+  engine: LlamaCPP
+  model:
+    ociRef: 172.17.10.8/se-pais-models/qwen/qwen2.5-1.5b-instruct:q4km
+  routingName: qwen-chat
+  replicas: 1
+  # 4 vCPU / 32Gi: a 1.5B model at Q4 needs ~2Gi, the rest is headroom for
+  # context and a bigger model later. Best-effort: no namespace reservation.
+  virtualMachineClassName: best-effort-xlarge
+  storageClassName: vsan-default-storage-policy
+---
+# Embeddings for Data Indexing and Retrieval (knowledge bases for agents).
+apiVersion: pais.vmware.com/v1alpha1
+kind: ModelEndpoint
+metadata:
+  name: nomic-embed
+  namespace: se-pais-tp7mm
+spec:
+  type: Embeddings
+  engine: LlamaCPP
+  model:
+    ociRef: 172.17.10.8/se-pais-models/nomic/nomic-embed-text-v1.5:q8
+  routingName: nomic-embed
+  replicas: 1
+  virtualMachineClassName: best-effort-large
+  storageClassName: vsan-default-storage-policy

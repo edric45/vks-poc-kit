@@ -1,0 +1,45 @@
+# The network layer of the demo: the MCP servers accept traffic only from
+# agentgateway, so its keys and tool rules cannot be bypassed from inside the
+# cluster. agentgateway itself is open on its port (PAIS reaches it through
+# the 172.19.0.27 VIP; the client address arriving here is the load
+# balancer's, so filtering it by source would not mean much).
+# Antrea enforces these; kubelet health probes are not blocked by them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: mcp
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agentgateway-in
+  namespace: mcp
+spec:
+  podSelector:
+    matchLabels: {app: agentgateway}
+  policyTypes: [Ingress]
+  ingress:
+  - ports:
+    - {protocol: TCP, port: 3000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mcp-servers-from-gateway-only
+  namespace: mcp
+spec:
+  podSelector:
+    matchExpressions:
+    - {key: app, operator: In, values: [kubernetes-mcp, lab-facts]}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels: {app: agentgateway}
+    ports:
+    - {protocol: TCP, port: 8080}
+    - {protocol: TCP, port: 8000}

@@ -62,6 +62,15 @@ Here VCF Automation is the provider:
 
 The UI writes the deprecated `spec.auth.oidc` field (a warning condition only).
 
+**Copy the right client ID (lab):** VCF Automation also lists each
+Supervisor's own login client (name `vcsa-…`, redirect
+`https://<supervisor>/wcp/pinniped/callback`, not public). PAIS was first given
+that ID by mistake; VCF Automation then ends at `/login/loginFailure` before any
+login page. The PAIS client is the one with redirect `https://172.19.0.25/`.
+With the right ID, the generic OIDC type works on VCF 9.1.0 for all-apps-3
+users. (`Is Global` and the organization-aware `vcfa` provider type are 9.1.1
+topics in Broadcom's docs.)
+
 ## 4. Activate
 
 VCF Automation > Build & Deploy > se-pais-tp7mm > Private AI.
@@ -115,10 +124,46 @@ vcf pais models push -s 172.17.10.8/<project> -m qwen/qwen2.5-1.5b-instruct -t q
 vcf pais models list -s 172.17.10.8/<project>
 ```
 
-The VCF CLI 9.1 bundle ships PAIS plugin v2.1.0 against service 3.0.0
-(**unverified** whether that matters).
+**Not from a Mac (lab):** the regional Harbor's certificate is valid for
+3650 days; macOS rejects TLS server certificates valid for more than 825 days
+even from a trusted private CA ("certificate is not standards compliant"), and
+the CLI always uses the macOS verifier (SSL_CERT_FILE is ignored). Push from
+Linux instead: `vcf plugin download-bundle --plugin pais` contains a
+standalone `pais-linux_amd64` binary; run it on the jump host with
+`DOCKER_CONFIG` (Harbor login) and `SSL_CERT_FILE` (Harbor CA) in a temp dir
+under /tmp, and delete the dir afterwards.
+
+PAIS plugin v2.1.0 is the only published version (checked 2026-10-11); the
+Supervisor recommends none. It pushes fine against service 3.0.0.
+
+## 7. Agents and MCP servers
+
+```
+PAIS agent (inside pais-api, se-pais-tp7mm)
+  -> http://172.19.0.27/mcp  + "Authorization: Bearer <that agent's key>"
+  -> agentgateway (se-pais-001, namespace mcp): API key -> agent name -> allowed tools
+  -> lab-facts (own MCP server)      kubernetes-mcp (read-only, view role in pais-db and mcp)
+```
+
+PAIS sends one fixed set of headers per **MCP server registration**, not per
+agent. So the same gateway URL is registered twice, once per agent key, and
+each agent is linked to its own registration. agentgateway maps the key to an
+agent and filters both the tool list and the calls (tested with the v1.6.0
+binary: wrong key 401; the docs agent sees only two tools).
+
+Layers, each enforced on its own:
+
+| Layer | Where | What it stops |
+|---|---|---|
+| Tool approval and linking | PAIS | an agent using a tool nobody approved or linked |
+| API key + `mcpAuthorization` | agentgateway | an agent (or anyone with the URL) calling tools outside its list |
+| NetworkPolicy | namespace mcp | anything in se-pais-001 reaching the MCP servers past the gateway |
+| `--read-only` + RBAC `view` | kubernetes-mcp | writes and Secrets, whatever the caller |
 
 ## Status (2026-10-11)
 
-PAIS Ready, UI reachable. Models Qwen2.5-1.5B-Instruct (q4_k_m) and
-nomic-embed-text-v1.5 (Q8_0) downloaded; push and model endpoints pending.
+PAIS Ready, UI reachable. Models in Harbor project se-pais-models:
+qwen/qwen2.5-1.5b-instruct:q4km and nomic/nomic-embed-text-v1.5:q8. Model
+endpoints qwen-chat and nomic-embed Ready (supervisor/pais/model-endpoints.yaml).
+Agent Builder login works. Next: an agent plus an MCP server, and controlling
+the traffic between them.

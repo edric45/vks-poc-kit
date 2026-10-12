@@ -1,0 +1,88 @@
+# kubernetes-mcp-server (containers/kubernetes-mcp-server): Kubernetes as MCP
+# tools, for the "ops" agent. Three guards, each enough on its own:
+#   --read-only     the server does not offer create/update/delete tools
+#   RBAC            the built-in "view" role, and only in pais-db and mcp
+#                   ("view" excludes Secrets); nothing cluster-wide
+#   agentgateway    only the ops agent's key may call these tools
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubernetes-mcp
+  namespace: mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-mcp-view
+  namespace: pais-db
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- kind: ServiceAccount
+  name: kubernetes-mcp
+  namespace: mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-mcp-view
+  namespace: mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+- kind: ServiceAccount
+  name: kubernetes-mcp
+  namespace: mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-mcp
+  namespace: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: kubernetes-mcp}
+  template:
+    metadata:
+      labels: {app: kubernetes-mcp}
+    spec:
+      serviceAccountName: kubernetes-mcp
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: server
+        image: quay.io/containers/kubernetes_mcp_server:v0.0.67
+        args:
+        - --port=8080                  # Streamable HTTP on /mcp
+        - --read-only
+        - --stateless                  # no session affinity needed behind a gateway
+        - --toolsets=core              # pods, events, resources; no helm/config tools
+        - --cluster-provider=in-cluster
+        ports:
+        - {name: mcp, containerPort: 8080}
+        readinessProbe:
+          tcpSocket: {port: 8080}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-mcp
+  namespace: mcp
+spec:
+  selector: {app: kubernetes-mcp}
+  ports:
+  - {name: mcp, port: 8080, targetPort: 8080}

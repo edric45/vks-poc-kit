@@ -24,10 +24,13 @@ supervisor/   applied to the Supervisor (context 172.17.10.2); each file names i
         istio/                   sidecar mode
       antrea-egress-test/        NSX subnet + observer for the Antrea Egress test (by hand)
     se-pais-001/                 the PAIS support cluster in se-pais-tp7mm, same add-ons
+  pais/
+    model-endpoints.yaml       PAIS model endpoints in se-pais-tp7mm (CPU, llama.cpp)
   applications/
     se-cluster-001.yaml          the ArgoCD app for the cluster (manual sync)
     se-pais-001.yaml             the same for se-pais-001 (Application lives in se-pais-tp7mm)
     se-pais-001-pais-db.yaml     PAIS's database inside se-pais-001 (automatic sync)
+    se-pais-001-mcp.yaml         MCP servers + agentgateway inside se-pais-001 (automatic sync)
   applicationsets/
     se-cluster-001-addons.yaml   one ArgoCD app per folder in addons/
     se-pais-001-addons.yaml      the same for se-pais-001
@@ -40,6 +43,8 @@ se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-
 se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
   storageclass-retain.yaml, istio-gatewayclass-defaults.yaml, headlamp-admin.yaml   as for se-cluster-001
   pais-db/postgres.yaml      PostgreSQL + pgvector for PAIS on VIP 172.19.0.24, synced by ArgoCD (password by hand)
+  mcp/                       MCP servers for PAIS agents behind agentgateway on VIP 172.19.0.27
+                             (lab-facts: own server; kubernetes-mcp: read-only; per-agent API keys)
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
   cis-scan.md   CIS benchmark scan: how to run, results on this lab, keeping it current

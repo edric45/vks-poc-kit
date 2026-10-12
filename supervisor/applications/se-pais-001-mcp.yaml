@@ -1,0 +1,27 @@
+# The ArgoCD Application for the MCP servers and agentgateway inside
+# se-pais-001 (se-pais-001/mcp/).
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/applications/se-pais-001-mcp.yaml
+#
+# Automatic sync: nothing here creates VMs or holds data. The agent API keys
+# are not in git, only their hashes (se-pais-001/mcp/agentgateway.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: se-pais-001-mcp
+  namespace: se-pais-tp7mm
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/edric45/vks-poc-kit.git
+    targetRevision: main
+    path: se-pais-001/mcp
+  destination:
+    name: se-pais-001
+    namespace: mcp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=false

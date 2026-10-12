@@ -1,0 +1,7 @@
+# MCP servers and the agentgateway in front of them, for PAIS agents.
+# Synced by supervisor/applications/se-pais-001-mcp.yaml. Nothing in this
+# folder is secret: agent API keys appear only as SHA-256 hashes.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp

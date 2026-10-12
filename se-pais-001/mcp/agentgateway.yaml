@@ -1,0 +1,111 @@
+# agentgateway v1.6.0 (standalone, Apache-2.0): the only way into the MCP
+# servers. PAIS registers http://172.19.0.27/mcp, once per agent, each time
+# with that agent's API key as a secret "Authorization: Bearer <key>" header.
+#
+# Who may call what (mcpAuthorization below):
+#   ops agent    every tool of both servers (kubernetes-mcp is read-only anyway)
+#   docs agent   labfacts check_vip and runbook_tip only; the other tools are
+#                not even listed to it
+# Tested 2026-10-12 with the v1.6.0 binary: no key or a wrong key -> 401.
+#
+# Keys: only their SHA-256 hashes are here (public repo). Make a key pair:
+#   OPS_KEY=$(openssl rand -hex 32);  printf %s "$OPS_KEY"  | shasum -a 256
+#   DOCS_KEY=$(openssl rand -hex 32); printf %s "$DOCS_KEY" | shasum -a 256
+# put each hash below after "sha256:", and the keys themselves only into the
+# PAIS MCP server registrations. The all-zero placeholders match no key, so
+# until they are replaced every request is refused.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentgateway
+  namespace: mcp
+data:
+  config.yaml: |
+    config:
+      adminAddr: "127.0.0.1:15000"
+      readinessAddr: "0.0.0.0:15021"
+    binds:
+    - port: 3000
+      listeners:
+      - routes:
+        - name: mcp
+          matches:
+          - path: {pathPrefix: /mcp}
+          policies:
+            apiKey:
+              mode: strict
+              location:
+                header: {name: Authorization, prefix: "Bearer "}
+              keys:
+              - keyHash: "sha256:7e19db9c9fde316d84b971487a93057a3ca335414d7ef1e38584c558a18ae77c"
+                metadata: {agent: ops}
+              - keyHash: "sha256:7372ef83b232ee8f728ac4ead7b87936fa7731705bfec24b3fda091e0b0bc5b0"
+                metadata: {agent: docs}
+            mcpAuthorization:
+              rules:
+              - allow: 'apiKey.agent == "ops"'
+              - allow: 'apiKey.agent == "docs" && mcp.tool.target == "labfacts" && mcp.tool.name in ["check_vip", "runbook_tip"]'
+          backends:
+          - mcp:
+              statefulMode: stateless
+              prefixMode: always
+              targets:
+              - name: k8s
+                mcp: {host: "http://kubernetes-mcp.mcp.svc.cluster.local:8080/mcp"}
+              - name: labfacts
+                mcp: {host: "http://lab-facts.mcp.svc.cluster.local:8000/mcp"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentgateway
+  namespace: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: agentgateway}
+  template:
+    metadata:
+      labels: {app: agentgateway}
+      annotations:
+        # Restart the pod when the config (keys, rules) changes.
+        config-version: "1"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: agentgateway
+        image: ghcr.io/agentgateway/agentgateway:v1.6.0
+        args: [-f, /config/config.yaml]
+        ports:
+        - {name: mcp, containerPort: 3000}
+        - {name: ready, containerPort: 15021}
+        readinessProbe:
+          tcpSocket: {port: 15021}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 256Mi}
+        volumeMounts:
+        - {name: config, mountPath: /config, readOnly: true}
+      volumes:
+      - name: config
+        configMap: {name: agentgateway}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentgateway
+  namespace: mcp
+spec:
+  type: LoadBalancer
+  # Fixed and clean (no stale NSX route); PAIS stores this URL.
+  loadBalancerIP: 172.19.0.27
+  selector: {app: agentgateway}
+  ports:
+  - {name: mcp, port: 80, targetPort: 3000}
