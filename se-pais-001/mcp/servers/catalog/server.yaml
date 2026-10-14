@@ -1,0 +1,268 @@
+# mcp-catalog: the marketplace catalog as an MCP server. Agents call
+# list_servers / get_server / find_servers to discover which MCP servers exist,
+# what they offer and which plan grants which tools. Reads the catalog
+# ConfigMaps (label mcp.lab/catalog=true) live from the Kubernetes API, so a
+# newly published server shows up without touching this one.
+# Standard-library Python in a ConfigMap, like lab-facts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-catalog-server
+  namespace: mcp
+data:
+  server.py: |
+    """mcp-catalog: the MCP marketplace catalog as an MCP server.
+
+    Reads the catalog entries live from the Kubernetes API (ConfigMaps labelled
+    mcp.lab/catalog=true in this namespace), so agents can discover which MCP
+    servers exist, what they offer and which plans grant what. Standard library
+    only; same minimal Streamable-HTTP MCP handling as lab-facts.
+
+    K8S_API overrides the API address (for a local test through `kubectl proxy`);
+    in the cluster it uses the pod's service account.
+    """
+    import json
+    import os
+    import ssl
+    import urllib.parse
+    import urllib.request
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"]
+    SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+    NAMESPACE = os.environ.get("CATALOG_NAMESPACE", "mcp")
+    SELECTOR = "mcp.lab/catalog=true"
+    GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://172.19.0.28/mcp")
+
+
+    def k8s_catalog():
+        """Return the catalog entries (the data of each labelled ConfigMap)."""
+        path = (f"/api/v1/namespaces/{NAMESPACE}/configmaps?labelSelector="
+                + urllib.parse.quote(SELECTOR))
+        base = os.environ.get("K8S_API")
+        if base:  # local test via kubectl proxy
+            req, ctx = urllib.request.Request(base + path), None
+        else:
+            host = os.environ["KUBERNETES_SERVICE_HOST"]
+            port = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
+            with open(f"{SA_DIR}/token") as f:
+                token = f.read().strip()
+            req = urllib.request.Request(f"https://{host}:{port}{path}",
+                                         headers={"Authorization": f"Bearer {token}"})
+            ctx = ssl.create_default_context(cafile=f"{SA_DIR}/ca.crt")
+        with urllib.request.urlopen(req, context=ctx, timeout=10) as r:
+            items = json.load(r).get("items", [])
+        entries = [i.get("data", {}) for i in items]
+        return sorted(entries, key=lambda e: e.get("name", ""))
+
+
+    def list_servers(_args):
+        entries = k8s_catalog()
+        if not entries:
+            return "The catalog is empty."
+        lines = [f"{len(entries)} MCP servers in the marketplace (all reached through {GATEWAY_URL}):"]
+        for e in entries:
+            lines.append(f"- {e.get('name')}: {e.get('description', '').strip()} "
+                         f"[access: {e.get('access', '?')}; tools appear as {e.get('gatewayTarget', '?')}_<tool>]")
+        return "\n".join(lines)
+
+
+    def get_server(args):
+        name = str(args.get("name", "")).strip().lower()
+        for e in k8s_catalog():
+            if e.get("name", "").lower() == name or e.get("gatewayTarget", "").lower() == name:
+                keys = ["name", "description", "owner", "source", "access", "gatewayTarget", "tools", "plans"]
+                return "\n".join(f"{k}: {e[k].strip()}" for k in keys if k in e)
+        names = ", ".join(e.get("name", "?") for e in k8s_catalog())
+        return f"No server named '{name}'. Known: {names}"
+
+
+    def find_servers(args):
+        q = str(args.get("query", "")).strip().lower()
+        words = [w for w in q.split() if len(w) > 2] or [q]
+        hits = [e for e in k8s_catalog()
+                if any(w in " ".join(e.values()).lower() for w in words)]
+        if not hits:
+            return f"No server matches '{q}'."
+        return "\n".join(f"- {e.get('name')}: {e.get('description', '').strip()}" for e in hits)
+
+
+    TOOLS = [
+        {"name": "list_servers",
+         "description": "List every MCP server in the marketplace with a one-line description and its access level.",
+         "inputSchema": {"type": "object", "properties": {}},
+         "annotations": {"readOnlyHint": True}},
+        {"name": "get_server",
+         "description": "Details of one MCP server: owner, source, access, tools and plans (which plan grants which tools).",
+         "inputSchema": {"type": "object",
+                         "properties": {"name": {"type": "string", "description": "server name, e.g. argocd"}},
+                         "required": ["name"]},
+         "annotations": {"readOnlyHint": True}},
+        {"name": "find_servers",
+         "description": "Find MCP servers whose catalog entry mentions the given words, e.g. 'kubernetes pods' or 'deployments'.",
+         "inputSchema": {"type": "object",
+                         "properties": {"query": {"type": "string"}},
+                         "required": ["query"]},
+         "annotations": {"readOnlyHint": True}},
+    ]
+    HANDLERS = {"list_servers": list_servers, "get_server": get_server, "find_servers": find_servers}
+
+
+    def handle(msg):
+        method, mid = msg.get("method"), msg.get("id")
+        if mid is None:
+            return None
+        params = msg.get("params") or {}
+        if method == "initialize":
+            asked = params.get("protocolVersion")
+            result = {"protocolVersion": asked if asked in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0],
+                      "capabilities": {"tools": {"listChanged": False}},
+                      "serverInfo": {"name": "mcp-catalog", "version": "0.1.0"}}
+        elif method == "ping":
+            result = {}
+        elif method == "tools/list":
+            result = {"tools": TOOLS}
+        elif method == "tools/call":
+            fn = HANDLERS.get(params.get("name"))
+            if fn is None:
+                return {"jsonrpc": "2.0", "id": mid,
+                        "error": {"code": -32602, "message": f"Unknown tool: {params.get('name')}"}}
+            try:
+                text, err = fn(params.get("arguments") or {}), False
+            except Exception as e:  # e.g. Kubernetes API unreachable
+                text, err = f"Catalog lookup failed: {e}", True
+            result = {"content": [{"type": "text", "text": text}], "isError": err}
+        else:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"Method not found: {method}"}}
+        return {"jsonrpc": "2.0", "id": mid, "result": result}
+
+
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code, body=None):
+            data = b"" if body is None else json.dumps(body).encode()
+            self.send_response(code)
+            if body is not None:
+                self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                return self._send(200, {"status": "ok"})
+            self._send(405 if self.path == "/mcp" else 404)
+
+        def do_DELETE(self):
+            self._send(405)
+
+        def do_POST(self):
+            if self.path != "/mcp":
+                return self._send(404)
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+            except (ValueError, TypeError):
+                return self._send(400, {"jsonrpc": "2.0", "id": None,
+                                        "error": {"code": -32700, "message": "Parse error"}})
+            if isinstance(body, list):
+                replies = [r for r in (handle(m) for m in body) if r is not None]
+                return self._send(200, replies) if replies else self._send(202)
+            reply = handle(body)
+            self._send(202) if reply is None else self._send(200, reply)
+
+        def log_message(self, fmt, *args):
+            print(f"{self.address_string()} {fmt % args}", flush=True)
+
+
+    if __name__ == "__main__":
+        port = int(os.environ.get("PORT", "8000"))
+        print(f"mcp-catalog MCP server on :{port}/mcp, namespace {NAMESPACE}", flush=True)
+        ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-catalog
+  namespace: mcp
+---
+# Read ConfigMaps in namespace mcp only. (RBAC cannot filter by label, so this
+# also covers agentgateway's config: key hashes only, nothing secret.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mcp-catalog-reader
+  namespace: mcp
+rules:
+- apiGroups: [""]
+  resources: [configmaps]
+  verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mcp-catalog-reader
+  namespace: mcp
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mcp-catalog-reader
+subjects:
+- kind: ServiceAccount
+  name: mcp-catalog
+  namespace: mcp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-catalog
+  namespace: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mcp-catalog}
+  template:
+    metadata:
+      # mcp.lab/role: server = reachable only from agentgateway (gateway/networkpolicy.yaml)
+      labels: {app: mcp-catalog, mcp.lab/role: server}
+      annotations:
+        # Bump when server.py changes (see lab-facts).
+        code-version: "1"
+    spec:
+      serviceAccountName: mcp-catalog
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: server
+        image: docker.io/library/python:3.13-slim
+        command: [python, -u, /app/server.py]
+        env:
+        - {name: PORT, value: "8000"}
+        - {name: CATALOG_NAMESPACE, value: mcp}
+        - {name: GATEWAY_URL, value: "http://172.19.0.28/mcp"}
+        ports:
+        - {name: mcp, containerPort: 8000}
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8000}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 128Mi}
+        volumeMounts:
+        - {name: code, mountPath: /app, readOnly: true}
+      volumes:
+      - name: code
+        configMap: {name: mcp-catalog-server}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-catalog
+  namespace: mcp
+spec:
+  selector: {app: mcp-catalog}
+  ports:
+  - {name: mcp, port: 8000, targetPort: 8000}

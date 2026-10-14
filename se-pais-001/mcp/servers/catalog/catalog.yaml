@@ -1,0 +1,21 @@
+# Marketplace entry for this MCP server (see ../lab-facts/catalog.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-catalog-catalog
+  namespace: mcp
+  labels: {mcp.lab/catalog: "true"}
+data:
+  name: catalog
+  description: The marketplace itself - which MCP servers exist, what each offers, and which plan grants which tools.
+  owner: SE lab (vks-poc-kit)
+  source: own code, Python standard library (server.yaml); reads the catalog ConfigMaps live
+  access: read-only (Role get/list ConfigMaps in namespace mcp)
+  gatewayTarget: catalog
+  endpoint: http://mcp-catalog.mcp.svc.cluster.local:8000/mcp
+  tools: |
+    list_servers   every MCP server with description and access
+    get_server     one server's owner, source, tools and plans
+    find_servers   servers matching words, e.g. "pods logs"
+  plans: |
+    full: all tools (open to every consumer)
