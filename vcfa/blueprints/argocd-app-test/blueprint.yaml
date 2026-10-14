@@ -1,0 +1,45 @@
+# Test: can a VCF Automation catalog request create an ArgoCD Application?
+# Synced from git by VCF Automation's git integration (one folder per
+# blueprint, file name blueprint.yaml, name + version required). Requesting
+# it creates the Application "vcfa-test" in the Supervisor namespace, which the
+# se-pais ArgoCD then deploys into se-pais-001 (se-pais-001/vcfa-test/).
+# Deleting the deployment in VCF Automation deletes the Application; its
+# finalizer removes what it deployed.
+name: argocd-app-test
+version: 1
+formatVersion: 1
+inputs:
+  namespace:
+    type: string
+    title: Supervisor namespace
+    description: The vSphere Namespace that runs the se-pais ArgoCD.
+    default: se-pais-tp7mm
+resources:
+  ns:
+    type: CCI.Supervisor.Namespace
+    properties:
+      name: ${input.namespace}
+      existing: true
+  app:
+    type: CCI.Supervisor.Resource
+    properties:
+      context: ${resource.ns.id}
+      manifest:
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata:
+          name: vcfa-test
+          finalizers:
+          - resources-finalizer.argocd.argoproj.io
+        spec:
+          project: default
+          source:
+            repoURL: https://github.com/edric45/vks-poc-kit.git
+            targetRevision: main
+            path: se-pais-001/vcfa-test
+          destination:
+            name: se-pais-001
+            namespace: vcfa-test
+          syncPolicy:
+            automated: {prune: true, selfHeal: true}
+            syncOptions: [CreateNamespace=true]

@@ -48,6 +48,9 @@ se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
   mcp/                       MCP marketplace for PAIS agents (docs/mcp-marketplace.md)
     gateway/                 agentgateway (VIP 172.19.0.28), consumer keys and rules, network policy
     servers/<name>/          one MCP server each (lab-facts, kubernetes, argocd) + catalog entry
+vcfa/         synced into VCF Automation (All Apps org, git integration); one folder per blueprint
+  blueprints/argocd-app-test/   test: a catalog request creates an ArgoCD Application
+se-pais-001/vcfa-test/          what that test Application deploys (a harmless ConfigMap)
 docs/         reference for the whole project
   commands.md   finding fields, schemas and supported versions on the Supervisor
   cis-scan.md   CIS benchmark scan: how to run, results on this lab, keeping it current

@@ -1,0 +1,10 @@
+# Deployed only when someone requests the VCF Automation catalog item built
+# from vcfa/blueprints/argocd-app-test: proof that a catalog request reaches
+# se-pais-001 through ArgoCD. Harmless on purpose.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vcfa-test
+  namespace: vcfa-test
+data:
+  requestedBy: VCF Automation catalog -> ArgoCD Application -> se-pais-001
