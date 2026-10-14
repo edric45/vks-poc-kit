@@ -10,6 +10,7 @@
 #   ops agent    every tool of every server (all servers are read-only)
 #   docs agent   labfacts: check_vip, runbook_tip; argocd: list_applications,
 #                get_application. Other tools are not even listed to it.
+#   everyone     catalog: list_servers, get_server, find_servers
 # Tested 2026-10-12 with the v1.6.0 binary: no key or a wrong key -> 401.
 #
 # Keys: only their SHA-256 hashes are here (public repo). Make a key pair:
@@ -50,6 +51,8 @@ data:
               - allow: 'apiKey.agent == "ops"'
               - allow: 'apiKey.agent == "docs" && mcp.tool.target == "labfacts" && mcp.tool.name in ["check_vip", "runbook_tip"]'
               - allow: 'apiKey.agent == "docs" && mcp.tool.target == "argocd" && mcp.tool.name in ["list_applications", "get_application"]'
+              # The catalog is open to every consumer: discovering what exists grants nothing.
+              - allow: 'mcp.tool.target == "catalog"'
           backends:
           - mcp:
               statefulMode: stateless
@@ -61,6 +64,8 @@ data:
                 mcp: {host: "http://lab-facts.mcp.svc.cluster.local:8000/mcp"}
               - name: argocd
                 mcp: {host: "http://argocd-mcp.mcp.svc.cluster.local:3000/mcp"}
+              - name: catalog
+                mcp: {host: "http://mcp-catalog.mcp.svc.cluster.local:8000/mcp"}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -76,7 +81,7 @@ spec:
       labels: {app: agentgateway}
       annotations:
         # Restart the pod when the config (keys, rules) changes.
-        config-version: "2"
+        config-version: "3"
     spec:
       securityContext:
         runAsNonRoot: true

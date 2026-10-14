@@ -19,6 +19,7 @@ the PAIS agents in se-pais-tp7mm.
 consumer (PAIS agent, key)  ->  agentgateway  ->  servers/lab-facts    (own code)
                                  172.19.0.28      servers/kubernetes   (kubernetes-mcp-server, read-only)
                                  keys + rules     servers/argocd       (mcp-for-argocd, read-only)
+                                                  servers/catalog      (the catalog itself, as tools)
 ```
 
 ## Layout
@@ -47,6 +48,11 @@ kubectl --context se-pais-001:se-pais-001 -n mcp get cm mcp-catalog-argocd -o js
 | lab-facts | read-only | SE lab VIPs and known-problem fixes (own code) | basic: check_vip, runbook_tip; full |
 | kubernetes | read-only | pods, logs, events, resources in pais-db and mcp | full |
 | argocd | read-only | ArgoCD applications, sync/health, resource trees, logs | status: list_applications, get_application; full |
+| catalog | read-only | the marketplace itself: list_servers, get_server, find_servers (reads the catalog ConfigMaps live) | full, open to every consumer |
+
+Agents with the catalog tools can answer "which MCP servers exist and what can
+each do?" themselves: dynamic tool discovery, as in the Tanzu blog, served by
+the marketplace's own catalog.
 
 ## Publish a server
 
@@ -58,6 +64,14 @@ kubectl --context se-pais-001:se-pais-001 -n mcp get cm mcp-catalog-argocd -o js
 3. Add a target to `gateway/agentgateway.yaml` (`name` = gatewayTarget,
    `host` = endpoint) and bump `config-version`.
 4. Pull request, merge: ArgoCD creates `mcp-server-<name>`.
+
+First-time setup, in this order: apply `supervisor/argocd-se-pais.yaml` (the
+read-only ArgoCD account `mcp-reader`), create its token secret, push, then
+apply `supervisor/applicationsets/se-pais-001-mcp-servers.yaml` **and**
+`supervisor/applications/se-pais-001-mcp.yaml`: Applications are applied by
+hand, so a path change in git does nothing until the file is applied again
+(ArgoCD then refuses to auto-sync the old, now empty path: "auto-sync will wipe
+out all resources").
 
 Have the server running before the gateway lists it: agentgateway serves all
 targets behind one endpoint, and a target that fails can break the session
@@ -80,4 +94,15 @@ not even listed).
 | Consumer | PAIS registration | Allowed |
 |---|---|---|
 | ops | lab-gateway-ops | all tools of all servers |
-| docs | lab-gateway-docs | labfacts: check_vip, runbook_tip; argocd: list_applications, get_application |
+| docs | lab-gateway-docs | labfacts: check_vip, runbook_tip; argocd: list_applications, get_application; catalog: all |
+
+## Verified (2026-10-14)
+
+- Three Applications `mcp-server-<name>` Synced/Healthy; catalog lists argocd,
+  kubernetes, lab-facts.
+- argocd MCP server: 11 tools, all read-only (write tools removed by
+  `MCP_READ_ONLY`); `list_applications` returns the se-pais ArgoCD's 10
+  Applications with sync and health.
+- In PAIS: after "Refresh server details", the ops registration lists all
+  argocd tools, the docs registration only `argocd_list_applications` and
+  `argocd_get_application`; both agents answer accordingly.
