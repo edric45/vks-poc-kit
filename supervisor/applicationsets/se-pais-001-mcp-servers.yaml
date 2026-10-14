@@ -1,0 +1,48 @@
+# The MCP marketplace's "publish" step: one ArgoCD Application per MCP server
+# folder under se-pais-001/mcp/servers/, deployed into namespace mcp of se-pais-001.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/applicationsets/se-pais-001-mcp-servers.yaml
+#
+#   add servers/<name>/ (server.yaml + catalog.yaml), push   -> published:
+#       Application mcp-server-<name>, its pods, and its catalog entry
+#   delete the folder, push                                  -> unpublished
+#
+# Publishing makes a server exist and appear in the catalog; nobody can call it
+# yet. Access is granted separately, per consumer, in the gateway
+# (se-pais-001/mcp/gateway/agentgateway.yaml). See docs/mcp-marketplace.md.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: se-pais-001-mcp-servers
+  namespace: se-pais-tp7mm
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - git:
+      repoURL: https://github.com/edric45/vks-poc-kit.git
+      revision: main
+      directories:
+      - path: se-pais-001/mcp/servers/*
+  template:
+    metadata:
+      name: 'mcp-server-{{ .path.basename }}'
+      labels:
+        cluster: se-pais-001
+        kind: mcp-server
+      # Unpublishing (deleting the folder) removes the server's resources.
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/edric45/vks-poc-kit.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+      destination:
+        name: se-pais-001
+        namespace: mcp
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

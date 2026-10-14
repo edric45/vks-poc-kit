@@ -40,6 +40,7 @@ network and identifies just this namespace. 172.17.10.24 is the VPC's
 | Private egress subnet | `egress-private`, 172.30.0.32/28, gateway .33, reserved .34–.39, VLAN 101 |
 | Public egress subnet | `egress-public`, 172.17.10.32/28, gateway .33, reserved .34–.35, VLAN 102 |
 | Observer, inside the VPC | test pod `egress-observer` on the Supervisor (vSphere Pod), 172.31.1.3:8080; replies with the caller's source address |
+| Sniffer, inside the VPC | test pod `egress-sniffer` (vSphere Pod, netshoot), 172.31.1.2:8080; `tcpdump` on interface `podvnic` |
 | Outside the VPC | lab jump host 192.168.50.1; `tcpdump` shows the source of incoming connections |
 
 Antrea in VKS already has the needed feature gates (from `antrea-config`):
@@ -524,6 +525,56 @@ for p in egress-private/client egress-public/client egress-control/control; do
 done
 ```
 
+### 5. Packet capture inside the VPC (optional)
+
+A vSphere Pod with tcpdump in the same VPC, listening on 8080:
+
+```sh
+kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-sniffer.yaml
+kubectl --context 172.17.10.2 -n se-ns-vks get pod egress-sniffer -o wide        # 172.31.1.2
+# terminal 1: capture (a vSphere Pod's interface is "podvnic")
+kubectl --context 172.17.10.2 -n se-ns-vks exec -it egress-sniffer -- \
+  tcpdump -n -tttt -i podvnic 'tcp dst port 8080 and tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0'
+# terminal 2: connect from each namespace
+for p in egress-private/client egress-public/client egress-control/control; do
+  kubectl --context $C -n ${p%/*} exec ${p#*/} -- curl -s -m 3 telnet://172.31.1.2:8080 </dev/null
+done
+```
+
+`supervisor/clusters/se-cluster-001/antrea-egress-test/egress-sniffer.yaml`:
+
+```yaml
+# Packet-capture endpoint INSIDE the VPC, next to egress-observer: a vSphere
+# Pod with tcpdump that also listens on 8080, so the egress test clients can
+# connect to it while it captures their SYNs.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-sniffer.yaml
+#   kubectl --context 172.17.10.2 -n se-ns-vks get pod egress-sniffer -o wide        # its IP
+#   kubectl --context 172.17.10.2 -n se-ns-vks exec -it egress-sniffer -- \
+#     tcpdump -n -tttt -i podvnic 'tcp dst port 8080 and tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0'
+#
+# The interface in a vSphere Pod is "podvnic", not eth0.
+#
+# se-ns-vks enforces Pod Security "baseline": adding NET_RAW/NET_ADMIN is
+# rejected, but baseline allows the runtime's default capabilities, and the
+# vSphere Pod's defaults include NET_RAW: tcpdump works (verified 2026-10-12).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: egress-sniffer
+  namespace: se-ns-vks
+  labels:
+    app: egress-sniffer
+spec:
+  containers:
+  - name: sniffer
+    image: docker.io/nicolaka/netshoot:v0.13
+    # A trivial TCP listener so connections complete; tcpdump runs via exec.
+    command: ["socat", "TCP-LISTEN:8080,fork,reuseaddr", "SYSTEM:echo ok"]
+    ports:
+    - containerPort: 8080
+```
+
 ## Results (2026-10-12)
 
 ### Side by side
@@ -563,6 +614,21 @@ Reading it:
   physical firewall rule can name.
 - The egress-private pod ran on the *other* worker: Antrea tunnelled its
   traffic to the egress node, which applied the SNAT.
+
+Packet capture inside the VPC (egress-sniffer, interface `podvnic`), same order:
+
+```
+08:12:51.432277 IP 172.30.0.34.48196 > 172.31.1.2.8080: Flags [S]     <- egress-private
+08:12:53.363294 IP 172.30.0.34.55736 > 172.31.1.2.8080: Flags [S]     <- egress-private
+08:12:57.074067 IP 172.17.10.34.43166 > 172.31.1.2.8080: Flags [S]    <- egress-public
+08:12:58.768324 IP 172.17.10.34.43174 > 172.31.1.2.8080: Flags [S]    <- egress-public
+08:13:02.463180 IP 172.30.0.6.56762 > 172.31.1.2.8080: Flags [S]      <- egress-control (node IP)
+08:13:04.137323 IP 172.30.0.6.50140 > 172.31.1.2.8080: Flags [S]      <- egress-control
+```
+
+Both captures together: inside the VPC every namespace is distinct (its egress
+IP or its node IP); outside the VPC only the Public egress IP survives, the
+rest collapse to the VPC's 172.17.10.24.
 
 Where 172.17.10.24 comes from:
 
@@ -610,56 +676,73 @@ The other worker (`…sntdw`) holds no egress IP and has no `antrea-ext`
 interface and no egress routing tables: Antrea creates them only on the node
 that currently holds an egress IP.
 
-### Antrea Traceflow (2026-10-09, Private variant)
+### Antrea Traceflow to the jump host (2026-10-12)
 
-Traceflow injects a test packet and reports what each node's datapath did with
-it. This run predates the renaming: the namespace was then called
-`egress-test` and the client ran on worker `hgscj`, which did not hold the
-egress IP; destination the observer.
-
-```yaml
-apiVersion: crd.antrea.io/v1beta1
-kind: Traceflow
-metadata:
-  name: egress-check
-spec:
-  source:
-    namespace: egress-private      # was egress-test in this run
-    pod: client
-  destination:
-    ip: 172.31.1.3
-  packet:
-    transportHeader:
-      tcp:
-        dstPort: 8080
-        flags: 2          # SYN
-```
+Traceflow injects a test packet and reports what each node's datapath does
+with it. `antctl` in the Antrea controller pod creates the Traceflow, waits,
+prints the result and removes it:
 
 ```sh
-kubectl --context $C apply -f traceflow.yaml
-kubectl --context $C get traceflow egress-check -o jsonpath='{.status.phase}'   # Succeeded
-kubectl --context $C get traceflow egress-check -o yaml                          # status.results
-kubectl --context $C delete traceflow egress-check
+for p in egress-private/client egress-public/client egress-control/control; do
+  kubectl --context $C -n kube-system exec deploy/antrea-controller -c antrea-controller -- \
+    antctl traceflow -S $p -D 192.168.50.1 -f tcp,tcp_dst=22
+done
 ```
 
-Result:
+| Namespace | Pod's node | Source node | Egress node | Leaves the cluster as |
+|---|---|---|---|---|
+| egress-private | `sntdw` | `ForwardedToEgressNode` (egress-private, 172.30.0.34) | `MarkedForSNAT` 172.30.0.34 | 172.30.0.34 |
+| egress-public | `49dq4` (is the egress node) | `MarkedForSNAT` 172.17.10.34, no tunnel needed | (same node) | 172.17.10.34 |
+| egress-control | `sntdw` | no Egress observation: straight out | — | its node IP |
+
+egress-private, pod on the other worker, so the packet is tunnelled to the
+egress node first:
 
 ```
 phase: Succeeded
-node: se-cluster-001-se-cluster-001-np01-nf8s7-mmc6z-hgscj        (source node)
-    {'action': 'Forwarded', 'component': 'SpoofGuard', 'srcPodIP': '192.168.145.21'}
-    {'action': 'ForwardedToEgressNode', 'component': 'Egress', 'egress': 'egress-test',
-     'egressIP': '172.30.0.34', 'egressNode': 'se-cluster-001-se-cluster-001-np01-nf8s7-mmc6z-49dq4'}
-    {'action': 'Forwarded', 'component': 'Forwarding', 'componentInfo': 'Output', 'tunnelDstIP': '172.30.0.34'}
-node: se-cluster-001-se-cluster-001-np01-nf8s7-mmc6z-49dq4        (egress node)
-    {'action': 'Received', 'component': 'Forwarding'}
-    {'action': 'MarkedForSNAT', 'component': 'Egress', 'egressIP': '172.30.0.34'}
-    {'action': 'ForwardedOutOfNetwork', 'component': 'Forwarding', 'componentInfo': 'Output'}
+source: egress-private/client
+destination: 192.168.50.1
+- node: …-mlk7h-sntdw
+  - component: SpoofGuard    action: Forwarded              srcPodIP: 192.168.147.18
+  - component: Egress        action: ForwardedToEgressNode  egress: egress-private
+                                                            egressIP: 172.30.0.34
+                                                            egressNode: …-mmc6z-49dq4
+  - component: Forwarding    action: Forwarded              tunnelDstIP: 172.30.0.34
+- node: …-mmc6z-49dq4
+  - component: Forwarding    action: Received
+  - component: Egress        action: MarkedForSNAT          egressIP: 172.30.0.34
+  - component: Forwarding    action: ForwardedOutOfNetwork
 ```
 
-Read it as: on the source node the packet matches the Egress and is tunnelled
-to the egress node (`ForwardedToEgressNode`); there it is marked for SNAT to
-the egress IP (`MarkedForSNAT`) and leaves the cluster (`ForwardedOutOfNetwork`).
+egress-public, pod already on the egress node, so the SNAT happens locally:
+
+```
+phase: Succeeded
+source: egress-public/client
+destination: 192.168.50.1
+- node: …-mmc6z-49dq4
+  - component: SpoofGuard    action: Forwarded              srcPodIP: 192.168.146.19
+  - component: Egress        action: MarkedForSNAT          egress: egress-public
+                                                            egressIP: 172.17.10.34
+                                                            egressNode: …-mmc6z-49dq4
+  - component: Forwarding    action: ForwardedOutOfNetwork
+```
+
+egress-control, no Egress, so Antrea only forwards it out of its own node:
+
+```
+phase: Succeeded
+source: egress-control/control
+destination: 192.168.50.1
+- node: …-mlk7h-sntdw
+  - component: SpoofGuard    action: Forwarded              srcPodIP: 192.168.147.17
+  - component: Forwarding    action: ForwardedOutOfNetwork
+```
+
+Traceflow covers the cluster's datapath only, up to the packet leaving the
+node. It cannot see what NSX does afterwards: both Egresses look alike here
+(`MarkedForSNAT`), and only the packet captures show that the VPC gateway
+replaces 172.30.0.34 with 172.17.10.24 while 172.17.10.34 passes unchanged.
 
 ## Notes and gotchas
 
@@ -695,6 +778,7 @@ kubectl --context $C delete -f se-cluster-001/antrea-egress-test/03-egress-publi
 kubectl --context $C delete -f se-cluster-001/antrea-egress-test/02-egress.yaml
 kubectl --context $C delete -f se-cluster-001/antrea-egress-test/01-clients.yaml
 # then NSX; the Public subnet frees its 16 shared external addresses
+kubectl --context 172.17.10.2 delete -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-sniffer.yaml
 kubectl --context 172.17.10.2 delete -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-subnet-public.yaml
 kubectl --context 172.17.10.2 delete -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-subnet.yaml
 ```

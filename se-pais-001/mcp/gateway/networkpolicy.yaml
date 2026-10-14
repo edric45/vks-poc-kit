@@ -1,5 +1,5 @@
-# The network layer of the demo: the MCP servers accept traffic only from
-# agentgateway, so its keys and tool rules cannot be bypassed from inside the
+# The network layer of the demo: the MCP servers (label mcp.lab/role: server)
+# accept traffic only from agentgateway, so its keys and tool rules cannot be bypassed from inside the
 # cluster. agentgateway itself is open on its port (PAIS reaches it through
 # its LoadBalancer VIP; the client address arriving here is the load
 # balancer's, so filtering it by source would not mean much).
@@ -32,14 +32,12 @@ metadata:
   name: mcp-servers-from-gateway-only
   namespace: mcp
 spec:
+  # Every MCP server in the marketplace carries this label (servers/*/server.yaml),
+  # so a newly published server is fenced in without touching this file.
   podSelector:
-    matchExpressions:
-    - {key: app, operator: In, values: [kubernetes-mcp, lab-facts]}
+    matchLabels: {mcp.lab/role: server}
   policyTypes: [Ingress]
   ingress:
   - from:
     - podSelector:
         matchLabels: {app: agentgateway}
-    ports:
-    - {protocol: TCP, port: 8080}
-    - {protocol: TCP, port: 8000}

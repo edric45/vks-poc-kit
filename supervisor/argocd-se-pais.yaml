@@ -26,3 +26,10 @@ spec:
   # One Application per add-on folder, as for se-cluster-001.
   applicationSet:
     enabled: true
+  # Read-only account for the argocd MCP server (se-pais-001/mcp/servers/argocd):
+  # its API token lets agents see applications, never change them. Create the
+  # token with: argocd --argocd-context se-pais account generate-token --account mcp-reader
+  localAccounts: [mcp-reader]
+  rbac:
+    policy: |
+      g, mcp-reader, role:readonly

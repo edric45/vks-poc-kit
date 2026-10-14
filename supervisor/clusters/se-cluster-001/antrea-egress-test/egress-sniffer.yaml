@@ -1,0 +1,29 @@
+# Packet-capture endpoint INSIDE the VPC, next to egress-observer: a vSphere
+# Pod with tcpdump that also listens on 8080, so the egress test clients can
+# connect to it while it captures their SYNs.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-cluster-001/antrea-egress-test/egress-sniffer.yaml
+#   kubectl --context 172.17.10.2 -n se-ns-vks get pod egress-sniffer -o wide        # its IP
+#   kubectl --context 172.17.10.2 -n se-ns-vks exec -it egress-sniffer -- \
+#     tcpdump -n -tttt -i podvnic 'tcp dst port 8080 and tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0'
+#
+# The interface in a vSphere Pod is "podvnic", not eth0.
+#
+# se-ns-vks enforces Pod Security "baseline": adding NET_RAW/NET_ADMIN is
+# rejected, but baseline allows the runtime's default capabilities, and the
+# vSphere Pod's defaults include NET_RAW: tcpdump works (verified 2026-10-12).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: egress-sniffer
+  namespace: se-ns-vks
+  labels:
+    app: egress-sniffer
+spec:
+  containers:
+  - name: sniffer
+    image: docker.io/nicolaka/netshoot:v0.13
+    # A trivial TCP listener so connections complete; tcpdump runs via exec.
+    command: ["socat", "TCP-LISTEN:8080,fork,reuseaddr", "SYSTEM:echo ok"]
+    ports:
+    - containerPort: 8080

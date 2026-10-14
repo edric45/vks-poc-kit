@@ -1,0 +1,45 @@
+# Antrea UI (upstream antrea-io/antrea-ui, Apache-2.0) inside se-cluster-001:
+# a web UI for Antrea, mainly to run and *see* Traceflows as a graph. Not part
+# of VKS; installed from Antrea's Helm chart by the se-ns-vks ArgoCD.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/applications/se-cluster-001-antrea-ui.yaml
+#
+# Open it through a port-forward (no Service of type LoadBalancer, no VIP):
+#   kubectl --context se-cluster-001:se-cluster-001 -n kube-system port-forward svc/antrea-ui 3000:3000
+#   http://localhost:3000   user "admin", default password "admin" (upstream
+#   default): change it under Settings after the first login. The backend
+#   keeps the password hash in the cluster, so nothing secret is in git.
+#
+# kube-system, as the chart expects (next to Antrea; antreaNamespace below).
+# VKS exempts kube-system from the restricted Pod Security level, which the
+# chart's pods would not meet.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: se-cluster-001-antrea-ui
+  namespace: se-ns-vks
+spec:
+  project: default
+  source:
+    repoURL: https://charts.antrea.io
+    chart: antrea-ui
+    targetRevision: 0.8.0
+    helm:
+      valuesObject:
+        antreaNamespace: kube-system
+        auth:
+          # Login with the admin password only; no pasted tokens, and no
+          # bearer-token API access from scripts.
+          token: {enable: false}
+          bearerToken: {enable: false}
+        # HTTPS off: reached over a kubectl port-forward only. (The chart's
+        # "auto" certificate would also be regenerated on every render, which
+        # ArgoCD would show as a permanent diff.)
+        https: {enable: false}
+  destination:
+    name: se-cluster-001
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

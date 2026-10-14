@@ -1,0 +1,9 @@
+# The MCP marketplace on se-pais-001: agentgateway and its policies here
+# (synced by supervisor/applications/se-pais-001-mcp.yaml), the MCP servers in
+# ../servers/<name>/ (one ArgoCD Application each, from
+# supervisor/applicationsets/se-pais-001-mcp-servers.yaml). See docs/mcp-marketplace.md.
+# Nothing here is secret: consumer API keys appear only as SHA-256 hashes.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mcp

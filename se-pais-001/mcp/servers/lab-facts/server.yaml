@@ -2,7 +2,7 @@
 # library, mounted from this ConfigMap, so there is no image to build and the
 # pod needs no package index at start-up.
 #
-# Reached only through agentgateway (networkpolicy.yaml); PAIS never calls it
+# Reached only through agentgateway (gateway/networkpolicy.yaml); PAIS never calls it
 # directly.
 apiVersion: v1
 kind: ConfigMap
@@ -173,7 +173,8 @@ spec:
     matchLabels: {app: lab-facts}
   template:
     metadata:
-      labels: {app: lab-facts}
+      # mcp.lab/role: server = reachable only from agentgateway (gateway/networkpolicy.yaml)
+      labels: {app: lab-facts, mcp.lab/role: server}
       annotations:
         # Bump when server.py changes: a ConfigMap update alone does not
         # restart the pod, and Python has already loaded the old code.

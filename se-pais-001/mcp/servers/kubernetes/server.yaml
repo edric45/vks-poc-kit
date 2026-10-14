@@ -49,7 +49,8 @@ spec:
     matchLabels: {app: kubernetes-mcp}
   template:
     metadata:
-      labels: {app: kubernetes-mcp}
+      # mcp.lab/role: server = reachable only from agentgateway (gateway/networkpolicy.yaml)
+      labels: {app: kubernetes-mcp, mcp.lab/role: server}
     spec:
       serviceAccountName: kubernetes-mcp
       securityContext:

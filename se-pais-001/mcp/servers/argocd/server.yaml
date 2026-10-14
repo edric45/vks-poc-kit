@@ -1,0 +1,79 @@
+# argocd MCP server (argoproj-labs/mcp-for-argocd): ArgoCD as MCP tools, read
+# from the se-pais ArgoCD that manages se-pais-001 and its add-ons.
+#
+# Needs one secret, created by hand (never in git): an API token of the
+# read-only ArgoCD account "mcp-reader" (declared in supervisor/argocd-se-pais.yaml):
+#
+#   argocd login 172.19.0.23 --name se-pais --username admin --grpc-web --insecure
+#   argocd --argocd-context se-pais account generate-token --account mcp-reader
+#   kubectl --context se-pais-001:se-pais-001 -n mcp create secret generic argocd-mcp \
+#     --from-literal=token='<the token>'
+#
+# Three guards: MCP_READ_ONLY removes create/update/delete/sync/actions; the
+# ArgoCD account is role:readonly; agentgateway decides which consumer may
+# call which tool. The server itself takes no caller token
+# (--allow-unauthenticated): agentgateway authenticates callers, and the
+# NetworkPolicy lets only agentgateway reach it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: argocd-mcp
+  namespace: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: argocd-mcp}
+  template:
+    metadata:
+      # mcp.lab/role: server = reachable only from agentgateway (gateway/networkpolicy.yaml)
+      labels: {app: argocd-mcp, mcp.lab/role: server}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: server
+        image: ghcr.io/argoproj-labs/mcp-for-argocd:v0.9.0
+        # Image entrypoint: node dist/index.js; these are its arguments.
+        args:
+        - http
+        - --bind-address=0.0.0.0      # default is loopback only
+        - --allow-unauthenticated     # the gateway authenticates callers
+        - --stateless                 # no session affinity needed behind a gateway
+        - --port=3000
+        env:
+        - {name: ARGOCD_BASE_URL, value: "https://172.19.0.23"}
+        - name: ARGOCD_API_TOKEN
+          valueFrom:
+            secretKeyRef: {name: argocd-mcp, key: token}
+        - {name: MCP_READ_ONLY, value: "true"}
+        # The se-pais ArgoCD serves a self-signed certificate. Lab shortcut;
+        # with a CA-signed certificate, drop this.
+        - {name: NODE_TLS_REJECT_UNAUTHORIZED, value: "0"}
+        ports:
+        - {name: mcp, containerPort: 3000}
+        readinessProbe:
+          httpGet: {path: /healthz, port: 3000}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 50m, memory: 96Mi}
+          limits: {memory: 256Mi}
+        volumeMounts:
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-mcp
+  namespace: mcp
+spec:
+  selector: {app: argocd-mcp}
+  ports:
+  - {name: mcp, port: 3000, targetPort: 3000}

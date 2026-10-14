@@ -1,0 +1,23 @@
+# Marketplace entry for this MCP server (see ../lab-facts/catalog.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-catalog-argocd
+  namespace: mcp
+  labels: {mcp.lab/catalog: "true"}
+data:
+  name: argocd
+  description: Read-only view of the se-pais ArgoCD (172.19.0.23) - applications, sync and health status, resource trees, workload logs.
+  owner: SE lab (vks-poc-kit)
+  source: argoproj-labs/mcp-for-argocd v0.9.0, Apache-2.0
+  access: read-only (MCP_READ_ONLY, ArgoCD account mcp-reader with role:readonly)
+  gatewayTarget: argocd
+  endpoint: http://argocd-mcp.mcp.svc.cluster.local:3000/mcp
+  tools: |
+    list_applications, get_application, get_application_resource_tree,
+    get_application_managed_resources, get_application_workload_logs,
+    get_resource_events, get_resource_actions, list_clusters, get_appproject
+    (create/update/delete/sync/run_resource_action are removed by read-only mode)
+  plans: |
+    status: list_applications, get_application
+    full:   all tools (all read-only)

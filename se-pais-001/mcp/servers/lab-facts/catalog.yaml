@@ -1,0 +1,25 @@
+# Marketplace entry for this MCP server. The marketplace is these ConfigMaps:
+#   kubectl --context se-pais-001:se-pais-001 -n mcp get cm -l mcp.lab/catalog=true \
+#     -o custom-columns=SERVER:.data.name,ACCESS:.data.access,OWNER:.data.owner,DESCRIPTION:.data.description
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-catalog-lab-facts
+  namespace: mcp
+  labels: {mcp.lab/catalog: "true"}
+data:
+  name: lab-facts
+  description: Facts about the SE lab (which 172.19 VIPs are used or stale) and fixes for known problems.
+  owner: SE lab (vks-poc-kit)
+  source: own code, Python standard library (server.yaml)
+  access: read-only
+  # Tools reach consumers through agentgateway as <gatewayTarget>_<tool>.
+  gatewayTarget: labfacts
+  endpoint: http://lab-facts.mcp.svc.cluster.local:8000/mcp
+  tools: |
+    check_vip     is a 172.19.0.x address used, stale or free
+    list_vips     every used 172.19.0.x address and what it serves
+    runbook_tip   the fix for a known lab problem
+  plans: |
+    basic: check_vip, runbook_tip
+    full:  all tools

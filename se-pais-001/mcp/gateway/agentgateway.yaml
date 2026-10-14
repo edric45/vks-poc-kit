@@ -2,10 +2,14 @@
 # servers. PAIS registers http://<gateway VIP>/mcp, once per agent, each time
 # with that agent's API key as a secret "Authorization: Bearer <key>" header.
 #
-# Who may call what (mcpAuthorization below):
-#   ops agent    every tool of both servers (kubernetes-mcp is read-only anyway)
-#   docs agent   labfacts check_vip and runbook_tip only; the other tools are
-#                not even listed to it
+# This file is the marketplace's "binding" step: a consumer (one API key) is
+# bound to the servers and tools it may use (mcpAuthorization below). A new
+# server needs a target here; a new consumer needs a key hash and a rule.
+#
+# Who may call what:
+#   ops agent    every tool of every server (all servers are read-only)
+#   docs agent   labfacts: check_vip, runbook_tip; argocd: list_applications,
+#                get_application. Other tools are not even listed to it.
 # Tested 2026-10-12 with the v1.6.0 binary: no key or a wrong key -> 401.
 #
 # Keys: only their SHA-256 hashes are here (public repo). Make a key pair:
@@ -45,6 +49,7 @@ data:
               rules:
               - allow: 'apiKey.agent == "ops"'
               - allow: 'apiKey.agent == "docs" && mcp.tool.target == "labfacts" && mcp.tool.name in ["check_vip", "runbook_tip"]'
+              - allow: 'apiKey.agent == "docs" && mcp.tool.target == "argocd" && mcp.tool.name in ["list_applications", "get_application"]'
           backends:
           - mcp:
               statefulMode: stateless
@@ -54,6 +59,8 @@ data:
                 mcp: {host: "http://kubernetes-mcp.mcp.svc.cluster.local:8080/mcp"}
               - name: labfacts
                 mcp: {host: "http://lab-facts.mcp.svc.cluster.local:8000/mcp"}
+              - name: argocd
+                mcp: {host: "http://argocd-mcp.mcp.svc.cluster.local:3000/mcp"}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -69,7 +76,7 @@ spec:
       labels: {app: agentgateway}
       annotations:
         # Restart the pod when the config (keys, rules) changes.
-        config-version: "1"
+        config-version: "2"
     spec:
       securityContext:
         runAsNonRoot: true
