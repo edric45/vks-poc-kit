@@ -1,0 +1,123 @@
+# Arize Phoenix: the trace backend for agents and MCP calls (open source,
+# Elastic License 2.0 for the server; free to self-host).
+#
+# Why Phoenix: PAIS 3.0 sends agent traces in the OpenInference format
+# (PAISConfiguration spec.observability.llmTraces, "projectName" =
+# openinference.project.name), which Phoenix reads natively: it shows each
+# agent run as a tree of LLM calls, tool calls and retrievals, with prompts,
+# tool arguments and token counts. Plain OpenTelemetry spans (agentgateway)
+# land in it too.
+#
+#   PAIS (se-pais-tp7mm)  --OTLP-->  LoadBalancer VIP :4317 / :6006  --> Phoenix
+#   agentgateway (mcp)    --OTLP-->  phoenix.observability.svc:4317  --> Phoenix
+#   you                   --HTTP-->  VIP :6006                       --> Phoenix UI
+#
+# Synced by ArgoCD (supervisor/applications/se-pais-001-observability.yaml).
+#
+# LAB ONLY: authentication is off, so anyone reaching the VIP sees every
+# prompt and answer in the traces. For a customer: PHOENIX_ENABLE_AUTH=true
+# plus PHOENIX_SECRET, and an API key header for the senders (PAIS:
+# llmTraces.headersSecretRef; agentgateway: tracing.headers).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  # No pod-security label: the non-root Phoenix image meets "restricted",
+  # the VKS default.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: phoenix-data
+  namespace: observability
+spec:
+  accessModes: [ReadWriteOnce]
+  # Delete, not the cluster default (Retain): lab trace data, gone with the PVC.
+  storageClassName: vsan-default-storage-policy
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phoenix
+  namespace: observability
+spec:
+  replicas: 1
+  # One pod owns the ReadWriteOnce volume (SQLite inside it).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: phoenix}
+  template:
+    metadata:
+      labels: {app: phoenix}
+    spec:
+      securityContext:
+        # The image is built on distroless "nonroot" (uid 65532).
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: phoenix
+        # Pinned; the -nonroot variant. Newer: hub.docker.com/r/arizephoenix/phoenix/tags
+        image: docker.io/arizephoenix/phoenix:20.21.4-nonroot
+        # No command/args: the image starts `python -m phoenix.server.main serve`.
+        env:
+        # No PHOENIX_SQL_DATABASE_URL: Phoenix then keeps its data in SQLite
+        # under the working directory, on the volume.
+        - {name: PHOENIX_WORKING_DIR, value: /mnt/data}
+        - {name: PHOENIX_PORT, value: "6006"}
+        - {name: PHOENIX_GRPC_PORT, value: "4317"}
+        # On by default: analytics pixels (FullStory, Scarf) in the web UI.
+        - {name: PHOENIX_TELEMETRY_ENABLED, value: "false"}
+        ports:
+        - {name: http, containerPort: 6006}   # UI, and OTLP over HTTP at /v1/traces
+        - {name: otlp-grpc, containerPort: 4317}
+        readinessProbe:
+          httpGet: {path: /, port: 6006}
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 250m, memory: 512Mi}
+          limits: {memory: 2Gi}
+        volumeMounts:
+        - {name: data, mountPath: /mnt/data}
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - name: data
+        persistentVolumeClaim: {claimName: phoenix-data}
+      - name: tmp
+        emptyDir: {}
+---
+# In-cluster address, for agentgateway.
+apiVersion: v1
+kind: Service
+metadata:
+  name: phoenix
+  namespace: observability
+spec:
+  selector: {app: phoenix}
+  ports:
+  - {name: http, port: 6006, targetPort: 6006}
+  - {name: otlp-grpc, port: 4317, targetPort: 4317}
+---
+# The VIP for PAIS (its pods run on the Supervisor, outside this cluster) and
+# for the UI. Avi picks the address (172.19.x); check it for stale NSX routes
+# (docs/pais.md) before pointing PAIS at it.
+apiVersion: v1
+kind: Service
+metadata:
+  name: phoenix-lb
+  namespace: observability
+spec:
+  type: LoadBalancer
+  selector: {app: phoenix}
+  ports:
+  - {name: http, port: 6006, targetPort: 6006}
+  - {name: otlp-grpc, port: 4317, targetPort: 4317}

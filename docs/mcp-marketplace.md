@@ -95,6 +95,10 @@ not even listed).
 |---|---|---|
 | ops | lab-gateway-ops | all tools of all servers |
 | docs | lab-gateway-docs | labfacts: check_vip, runbook_tip; argocd: list_applications, get_application; catalog: all |
+| gitops (new, key to be made) | lab-gateway-gitops | argocd: all (read-only server); catalog: all |
+| concierge (new, key to be made) | lab-gateway-concierge | labfacts: runbook_tip; catalog: all |
+
+Each consumer's calls are traced to Phoenix with its name (docs/observability.md).
 
 ## Verified (2026-10-14)
 

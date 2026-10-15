@@ -1,0 +1,27 @@
+# The ArgoCD Application for the trace backend in se-pais-001
+# (se-pais-001/observability/: Arize Phoenix, docs/observability.md).
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/applications/se-pais-001-observability.yaml
+#
+# Automatic sync. Its only data is lab traces on a Delete volume.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: se-pais-001-observability
+  namespace: se-pais-tp7mm
+  # Deleting the Application removes Phoenix and its volume.
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/edric45/vks-poc-kit.git
+    targetRevision: main
+    path: se-pais-001/observability
+  destination:
+    name: se-pais-001
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

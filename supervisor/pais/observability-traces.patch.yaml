@@ -1,0 +1,23 @@
+# PAIS agent traces -> Phoenix (se-pais-001/observability/). A MERGE PATCH for
+# the PAISConfiguration that VCF Automation created; not a whole object.
+#
+#   1. Phoenix's address:  kubectl --context se-pais-001:se-pais-001 -n observability get svc phoenix-lb
+#   2. put it below in place of PHOENIX_VIP, then:
+#   kubectl --context 172.17.10.2 -n se-pais-tp7mm patch paisconfiguration default \
+#     --type merge --patch-file supervisor/pais/observability-traces.patch.yaml
+#
+# Field (PAIS 3.0, `kubectl explain paisconfigurations.spec.observability`):
+# "llmTraces configures collection of traces from LLM components and
+# forwarding to an OpenTelemetry backend. If unset, trace collection is
+# disabled." projectName is the OpenInference project: the same name as the
+# gateway's (agentgateway.yaml), so one agent run is one trace in Phoenix.
+#
+# protocol is required: grpc or http/protobuf (server dry-run, 2026-10-15).
+# gRPC to Phoenix's port 4317 leaves no doubt about URL paths. Fallback if no
+# traces arrive: protocol http/protobuf, endpoint http://PHOENIX_VIP:6006/v1/traces.
+spec:
+  observability:
+    llmTraces:
+      protocol: grpc
+      endpoint: http://PHOENIX_VIP:4317
+      projectName: lab-agents

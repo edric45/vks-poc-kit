@@ -1,0 +1,15 @@
+# PAIS metrics: PAIS deploys its own Prometheus in se-pais-tp7mm, which feeds
+# the monitoring dashboards in the PAIS UI. A MERGE PATCH, like the traces one.
+#
+#   kubectl --context 172.17.10.2 -n se-pais-tp7mm patch paisconfiguration default \
+#     --type merge --patch-file supervisor/pais/observability-metrics.patch.yaml
+#
+# The Prometheus pods are vSphere Pods in se-pais-tp7mm: their requests count
+# against the namespace's CPU/memory reservation (docs/pais.md, section 2).
+# 2026-10-15 the 12 running PAIS pods requested 1.8 cores and ~4 GiB of the
+# 12000 MB reserved, so there is room, but watch for "parent resource pool is
+# insufficient" events after applying.
+spec:
+  observability:
+    prometheusRuntime:
+      storageClassName: vsan-default-storage-policy

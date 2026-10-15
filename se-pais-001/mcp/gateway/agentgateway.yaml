@@ -6,16 +6,23 @@
 # bound to the servers and tools it may use (mcpAuthorization below). A new
 # server needs a target here; a new consumer needs a key hash and a rule.
 #
-# Who may call what:
-#   ops agent    every tool of every server (all servers are read-only)
-#   docs agent   labfacts: check_vip, runbook_tip; argocd: list_applications,
-#                get_application. Other tools are not even listed to it.
-#   everyone     catalog: list_servers, get_server, find_servers
+# Who may call what (one agent per job, docs/observability.md):
+#   ops agent       every tool of every server (all servers are read-only)
+#   docs agent      labfacts: check_vip, runbook_tip; argocd: list_applications,
+#                   get_application. Other tools are not even listed to it.
+#   gitops agent    every argocd tool (read-only: MCP_READ_ONLY on the server)
+#   concierge agent labfacts: runbook_tip (plus the catalog, like everyone)
+#   everyone        catalog: list_servers, get_server, find_servers
+#
+# Tracing: every request becomes an OpenTelemetry span in Phoenix
+# (se-pais-001/observability/), tagged with the agent, the MCP server and the
+# tool, so a tool call can be followed from the agent to the server.
 # Tested 2026-10-12 with the v1.6.0 binary: no key or a wrong key -> 401.
 #
 # Keys: only their SHA-256 hashes are here (public repo). Make a key pair:
 #   OPS_KEY=$(openssl rand -hex 32);  printf %s "$OPS_KEY"  | shasum -a 256
 #   DOCS_KEY=$(openssl rand -hex 32); printf %s "$DOCS_KEY" | shasum -a 256
+#   (same for GITOPS_KEY and CONCIERGE_KEY)
 # put each hash below after "sha256:", and the keys themselves only into the
 # PAIS MCP server registrations. The all-zero placeholders match no key, so
 # until they are replaced every request is refused.
@@ -29,6 +36,31 @@ data:
     config:
       adminAddr: "127.0.0.1:15000"
       readinessAddr: "0.0.0.0:15021"
+    # Tracing (v1.6.0 format; the older config.tracing is deprecated). Every
+    # request becomes a span, plus child spans for the calls to the MCP
+    # server. A request arriving with a W3C traceparent continues that trace,
+    # and the gateway passes traceparent on to the server.
+    # Tested 2026-10-15 with the v1.6.0 binary: spans carry the attributes
+    # below plus its own mcp.method.name, mcp.target and gen_ai.tool.name.
+    frontendPolicies:
+      tracing:
+        # OTLP over gRPC (the default protocol) to Phoenix in this cluster.
+        host: phoenix.observability.svc.cluster.local:4317
+        # Every request: lab volume is tiny.
+        randomSampling: true
+        resources:
+          service.name: '"agentgateway"'
+          # Phoenix groups traces by project. Same name as PAIS
+          # (llmTraces.projectName), so one agent run stays one trace.
+          openinference.project.name: '"lab-agents"'
+        # CEL, per request. On requests that are not tool calls
+        # (initialize, tools/list) the mcp.tool values are left out.
+        attributes:
+          agent: 'apiKey.agent'
+          mcp.tool: 'mcp.tool.name'
+          # OpenInference kind and name: Phoenix shows these as tool calls.
+          openinference.span.kind: '"TOOL"'
+          tool.name: 'mcp.tool.name'
     binds:
     - port: 3000
       listeners:
@@ -46,11 +78,18 @@ data:
                 metadata: {agent: ops}
               - keyHash: "sha256:7372ef83b232ee8f728ac4ead7b87936fa7731705bfec24b3fda091e0b0bc5b0"
                 metadata: {agent: docs}
+              # Placeholders until real keys are made (see the top of this file).
+              - keyHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                metadata: {agent: gitops}
+              - keyHash: "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+                metadata: {agent: concierge}
             mcpAuthorization:
               rules:
               - allow: 'apiKey.agent == "ops"'
               - allow: 'apiKey.agent == "docs" && mcp.tool.target == "labfacts" && mcp.tool.name in ["check_vip", "runbook_tip"]'
               - allow: 'apiKey.agent == "docs" && mcp.tool.target == "argocd" && mcp.tool.name in ["list_applications", "get_application"]'
+              - allow: 'apiKey.agent == "gitops" && mcp.tool.target == "argocd"'
+              - allow: 'apiKey.agent == "concierge" && mcp.tool.target == "labfacts" && mcp.tool.name == "runbook_tip"'
               # The catalog is open to every consumer: discovering what exists grants nothing.
               - allow: 'mcp.tool.target == "catalog"'
           backends:
@@ -81,7 +120,7 @@ spec:
       labels: {app: agentgateway}
       annotations:
         # Restart the pod when the config (keys, rules) changes.
-        config-version: "3"
+        config-version: "4"
     spec:
       securityContext:
         runAsNonRoot: true
