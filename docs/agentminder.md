@@ -215,7 +215,12 @@ k -n agentminder get secret ssp-ssp-secret-defaulttenantadminuser -o jsonpath='{
 k -n agentminder get secret ssp-ssp-secret-defaulttenantadminuser -o jsonpath='{.data.userPassword}' | base64 -d; echo
 ```
 
-Admin console: `https://mgmt-$HOST` (or `https://$HOST`, as in the guide).
+Admin console (default tenant, where DefaultTenantAdminUser lives):
+`https://$HOST/default/ui/v1/adminconsole/`. The bare `https://$HOST/` answers
+"Whitelabel Error Page, 404": AgentMinder is reached but serves nothing at
+`/`. Also: `/system/ui/v1/adminconsole/` (system tenant),
+`/default/ui/v1/signin/` (end-user sign-in); `mgmt-$HOST` serves the same
+paths (lab, 2026-10-15).
 The certificate is from the lab's private CA; to drop browser warnings, trust
 it: `k -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`.
 
