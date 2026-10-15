@@ -44,7 +44,6 @@ se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-
   headlamp-admin.yaml        Headlamp login (works around the add-on's RBAC bug)
   kube-bench-cis-2.0.yaml    one-off CIS Kubernetes Benchmark scan (docs/cis-scan.md)
   antrea-egress-test/        Antrea Egress test: clients, egress IP pools (Private, Public), Egress
-  agentminder/               AgentMinder 4.1 (Helm, by hand): Envoy Gateway class, Gateway + cert, chart values (docs/agentminder.md)
 se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
   storageclass-retain.yaml, istio-gatewayclass-defaults.yaml, headlamp-admin.yaml   as for se-cluster-001
   pais-db/postgres.yaml      PostgreSQL + pgvector for PAIS on VIP 172.19.0.24, synced by ArgoCD (password by hand)
@@ -52,6 +51,7 @@ se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
     gateway/                 agentgateway (VIP 172.19.0.28), consumer keys and rules, network policy
     servers/<name>/          one MCP server each (lab-facts, kubernetes, argocd) + catalog entry
   observability/phoenix.yaml Arize Phoenix: traces of PAIS agents and gateway MCP calls
+  agentminder/               AgentMinder 4.1 (Helm, by hand): Envoy Gateway class, Gateway + cert, chart values (docs/agentminder.md)
 vcfa/         synced into VCF Automation (All Apps org, git integration); one folder per blueprint
   blueprints/argocd-app-test/   test: a catalog request creates an ArgoCD Application
 se-pais-001/vcfa-test/          what that test Application deploys (a harmless ConfigMap)
@@ -62,7 +62,7 @@ docs/         reference for the whole project
   antrea-egress.md   Antrea Egress with a VLAN-backed NSX subnet: steps, YAML, results, Traceflow
   mcp-marketplace.md MCP marketplace on VKS: publish, discover, bind (GitOps, agentgateway)
   observability.md   tracing agents and MCP calls (PAIS + agentgateway -> Phoenix), the agents and their jobs
-  agentminder.md     AgentMinder 4.1 on se-cluster-001: install steps, differences from Broadcom's lab guide
+  agentminder.md     AgentMinder 4.1 on se-pais-001: install steps, differences from Broadcom's lab guide
 ```
 
 ## Step 1: ArgoCD on the Supervisor

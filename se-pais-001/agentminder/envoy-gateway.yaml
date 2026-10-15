@@ -1,10 +1,10 @@
 # The GatewayClass "eg" for AgentMinder: Envoy Gateway as a second Gateway API
-# controller in se-cluster-001, next to Istio (class "istio"). Each Gateway
+# controller in se-pais-001, next to Istio (class "istio"). Each Gateway
 # names its class, so the two never touch each other's Gateways.
 #
-# Applied INSIDE se-cluster-001, after Envoy Gateway itself is installed
+# Applied INSIDE se-pais-001, after Envoy Gateway itself is installed
 # (docs/agentminder.md, step 2):
-#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/agentminder/envoy-gateway.yaml
+#   kubectl --context se-pais-001:se-pais-001 apply -f se-pais-001/agentminder/envoy-gateway.yaml
 #
 # Why Envoy Gateway v1.7.2 and not the guide's v1.8.1: v1.8 is built for
 # Gateway API v1.5 and its CRD bundle carries a policy that refuses Gateway

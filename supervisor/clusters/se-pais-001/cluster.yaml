@@ -6,6 +6,8 @@
 #                  (more memory than se-cluster-001: PostgreSQL for PAIS Agent
 #                  Builder, MCP servers and agentgateway run here)
 #                  disks: root, containerd 50Gi, kubelet 50Gi
+#   workers        2 x best-effort-4xlarge (16 vCPU / 128Gi), pool np02, for
+#                  AgentMinder (docs/agentminder.md); disks: root, containerd 40Gi
 #
 # Meant to be synced by ArgoCD. To apply by hand instead:
 #   kubectl --context 172.17.10.2 apply -f supervisor/clusters/se-pais-001/
@@ -150,6 +152,30 @@ spec:
             - name: kubelet
               mountPath: /var/lib/kubelet
               capacity: 50Gi
+              storageClass: vsan-default-storage-policy
+
+      # np02: room for AgentMinder (docs/agentminder.md), added 2026-10-15.
+      # A separate pool, not more np01 workers, for two reasons:
+      # - storage quota: 4 more np01 workers (120Gi each) would take the
+      #   namespace past its 1000Gi; these take ~60Gi each (root 20 + 40).
+      # - no disruption: a new pool only adds VMs; np01 and its pods stay.
+      # AgentMinder requests ~12 cores / 26Gi; 2 x 16 vCPU leaves headroom.
+      # No taints or labels: pods may land on either pool. Remove the pool
+      # (and sync) when AgentMinder is gone.
+      - class: node-pool
+        name: se-pais-001-np02
+        replicas: 2
+        variables:
+          overrides:
+          - name: vmClass
+            value: best-effort-4xlarge
+          # One extra disk: container images (AgentMinder pulls ~20 of them).
+          # No separate kubelet disk: emptyDir data stays on the root disk.
+          - name: volumes
+            value:
+            - name: containerd
+              mountPath: /var/lib/containerd
+              capacity: 40Gi
               storageClass: vsan-default-storage-policy
 
 # Changing vmClass, storageClass, volumes, vsphereOptions or

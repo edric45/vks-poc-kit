@@ -1,8 +1,8 @@
-# AgentMinder's namespace, TLS certificate and Gateway in se-cluster-001.
+# AgentMinder's namespace, TLS certificate and Gateway in se-pais-001.
 #
-# Applied INSIDE se-cluster-001, BEFORE the AgentMinder charts
+# Applied INSIDE se-pais-001, BEFORE the AgentMinder charts
 # (docs/agentminder.md, step 3):
-#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/agentminder/gateway.yaml
+#   kubectl --context se-pais-001:se-pais-001 apply -f se-pais-001/agentminder/gateway.yaml
 #
 # Why we create the Gateway (the guide lets the ssp chart do it): AgentMinder
 # is an OIDC provider, so it must know its own name (ssp.ingress.host) at
