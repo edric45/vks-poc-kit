@@ -78,5 +78,9 @@ hazelcast-enterprise:
   cluster:
     memberCount: 1
   image:
-    imagePullSecrets:
-    - name: ssp-gcr-registry-creds
+    # A plain list of names under image.pullSecrets. The guide writes
+    # image.imagePullSecrets, which this subchart ignores; its default is a
+    # secret ssp-hazelcast-registrypullsecret that nothing creates, so the
+    # pull goes out with no credentials and gets 403 (lab 2026-10-15).
+    pullSecrets:
+    - ssp-gcr-registry-creds
