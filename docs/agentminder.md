@@ -221,6 +221,14 @@ Admin console (default tenant, where DefaultTenantAdminUser lives):
 `/`. Also: `/system/ui/v1/adminconsole/` (system tenant),
 `/default/ui/v1/signin/` (end-user sign-in); `mgmt-$HOST` serves the same
 paths (lab, 2026-10-15).
+
+The console's first page is a loader: it derives its base path from the
+address bar, stores it in a `__Secure-` cookie and reloads. A mistyped URL
+(`sslip.io//default/...`) gives a blank page; so can an untrusted
+certificate. Trust the lab CA in the browser (Firefox: Settings > Privacy &
+Security > Certificates > View Certificates > Authorities > Import):
+`k -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d > lab-root-ca.crt`.
+Login worked this way (2026-10-15).
 The certificate is from the lab's private CA; to drop browser warnings, trust
 it: `k -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`.
 
