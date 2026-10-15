@@ -54,6 +54,11 @@ nats:
     cluster:
       enabled: false
       replicas: 1
+  # The chart turns on a Prometheus Operator PodMonitor for NATS; no such
+  # type on VKS (see the same note in ssp-infra.yaml).
+  promExporter:
+    podMonitor:
+      enabled: false
   global:
     image:
       pullSecretNames:

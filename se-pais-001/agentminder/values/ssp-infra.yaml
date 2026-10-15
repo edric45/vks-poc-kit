@@ -34,3 +34,11 @@ clickhouse:
 
 fluent-bit:
   enabled: false
+
+# ssp-infra turns on a Prometheus Operator ServiceMonitor for the ClickHouse
+# operator. VKS's Prometheus add-on is not operator-based, so the
+# ServiceMonitor type doesn't exist and the install fails ("no matches for
+# kind ServiceMonitor", lab 2026-10-15).
+altinity-clickhouse-operator:
+  serviceMonitor:
+    enabled: false
