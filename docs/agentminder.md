@@ -175,9 +175,25 @@ k -n agentminder get pods -w                       # all Running / Completed
 k -n agentminder get httproute                     # ssp-ssp-router-full, -mgmt: Accepted
 ```
 
-Hazelcast Enterprise needs a licence key and the guide sets none; Broadcom's
-image presumably carries it (**to test**). If `ssp-hazelcast-*` logs a licence
-error, ask the AgentMinder team.
+Hazelcast Enterprise needs a licence key and the guide sets none: Broadcom's
+image `agentminder-images/hazelcast-enterprise:5.7.0-p3` carries one in its
+environment (`hazelcast.licensekey=EwJm0*********96000`, as Hazelcast logs
+it). **In our lab on 2026-10-15 that key had expired**: the pod exits with
+`InvalidLicenseException: Enterprise License has expired!`, and every core
+service that needs the cache (admin, auth-mgr, azserver, identity, aigateway,
+opa, ...) stays unready; OIDC and the console don't answer. This needs a valid
+key or a newer image from Broadcom. With a key, the chart's own setting
+overrides the image's (the pod's env wins):
+
+```sh
+read -rs "HZ_KEY?Hazelcast licence key: "; echo
+k -n agentminder create secret generic hazelcast-license --from-literal=key="$HZ_KEY"; unset HZ_KEY
+```
+
+and in `values/ssp.yaml` under `hazelcast-enterprise.hazelcast`:
+`licenseKeySecretName: hazelcast-license`, then `h upgrade ssp ...` with the
+same arguments as the install. The subchart passes the secret's key `key` as
+`HZ_LICENSEKEY`, which overrides the image's built-in key (chart, statefulset.yaml).
 
 ## 6. ssp-data: risk and network data
 
@@ -238,4 +254,6 @@ done, then remove pool np02 from `supervisor/clusters/se-pais-001/cluster.yaml` 
 server-side apply) and class eg Accepted; Gateway agentminder at
 172.19.0.31, certificate for agentminder / mgmt-agentminder
 .172-19-0-31.sslip.io; ssp-infra deployed (PXC ready, ClickHouse and keeper
-Completed); ssp installing (dataseed running after the pull-secret fix).
+Completed); ssp deployed (dataseed done) but BLOCKED: Hazelcast's built-in
+Enterprise licence has expired, so 10 core services stay unready (see step 5).
+Waiting for a licence key or image from Broadcom. ssp-data not installed yet.
