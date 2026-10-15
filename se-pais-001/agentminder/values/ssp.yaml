@@ -30,6 +30,16 @@ ssp:
       skipWildcardListener: true
       # Our Gateway has no port-80 listener to redirect from.
       httpToHttpsRedirect: "false"
+  # The pull secret for AgentMinder's OWN images (admin-svc, ssp-db-initializer,
+  # ...). The guide's demo file only sets global.image.pullSecretNames, which
+  # the subcharts (NATS, Hazelcast, collector) read but these pods don't: the
+  # pre-install dataseed job then pulls anonymously and hangs the install in
+  # ImagePullBackOff (lab 2026-10-15). Same key as values/ssp-data.yaml.
+  global:
+    ssp:
+      registry:
+        existingSecrets:
+        - name: ssp-gcr-registry-creds
   featureFlags:
     aigateway:
       enabled: true       # the in-platform AI Gateway (no separate chart)
