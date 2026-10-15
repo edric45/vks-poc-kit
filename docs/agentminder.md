@@ -208,7 +208,10 @@ it: `k -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt
 |---|---|
 | Gateway without ADDRESS | `k -n envoy-gateway-system get pods` (proxy pods rejected by Pod Security? the EnvoyProxy in envoy-gateway.yaml); `k -n agentminder describe gateway agentminder` |
 | Certificate not READY | `k -n agentminder describe certificate agentminder-tls`; cert-manager logs |
-| `ImagePullBackOff` | the `ssp-gcr-registry-creds` secret (step 3) |
+| `ImagePullBackOff` | the `ssp-gcr-registry-creds` secret (step 3), and that `values/ssp.yaml` sets `ssp.global.ssp.registry.existingSecrets` (the guide's `global.image.pullSecretNames` alone leaves AgentMinder's own pods without it; registry answers 403) |
+| `helm install ssp` hangs | the pre-install hook job `ssp-ssp-dataseed-job` isn't finishing: `k -n agentminder get pods -l job-name=ssp-ssp-dataseed-job` and its events |
+| reinstall refused: "active SSP dataseed process ... do not delete this job" | the chart blocks while that job exists and is active. If its containers NEVER STARTED (init waiting on an image pull), deleting the job is safe: `k -n agentminder delete job ssp-ssp-dataseed-job`, `h uninstall ssp -n agentminder`, install again. If `ssp-db-init` or `ssp-db-dataseed` ran, follow the chart's message instead (save the logs; `dbinitlog-saved-confirmed`) |
+| "no matches for kind ServiceMonitor / PodMonitor" | Prometheus Operator objects; VKS's Prometheus has no such types. Both are switched off in our values |
 | ssp install fails "No PXC object" / "ClickHouse is not available" | ssp-infra not finished: step 4's checks |
 | pods Pending | not enough room: `k describe pod`; workers (step 1) |
 | Helm step fails with x509 from a webhook | Gatekeeper's webhook certificate rotates now and then on se-pais-001; retry |
@@ -231,7 +234,8 @@ done, then remove pool np02 from `supervisor/clusters/se-pais-001/cluster.yaml` 
 
 ## Status
 
-Written and checked 2026-10-15: the four values/manifest files render
-(helm template, chart lookups bypassed) and pass server dry-runs; Envoy
-Gateway versions and CRD contents read from its charts; token tested.
-Nothing installed yet.
+2026-10-15, se-pais-001 (lab): np02 pool up; Envoy Gateway v1.7.2 (CRDs via
+server-side apply) and class eg Accepted; Gateway agentminder at
+172.19.0.31, certificate for agentminder / mgmt-agentminder
+.172-19-0-31.sslip.io; ssp-infra deployed (PXC ready, ClickHouse and keeper
+Completed); ssp installing (dataseed running after the pull-secret fix).
