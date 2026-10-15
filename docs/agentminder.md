@@ -256,5 +256,10 @@ server-side apply) and class eg Accepted; Gateway agentminder at
 172.19.0.31, certificate for agentminder / mgmt-agentminder
 .172-19-0-31.sslip.io; ssp-infra deployed (PXC ready, ClickHouse and keeper
 Completed); ssp deployed, then upgraded to Broadcom's renewed Hazelcast image
-5.7.1-p3 (the built-in licence of 5.7.0-p3 expired 29 Sep 2026; step 5).
-ssp-data not installed yet.
+5.7.1-p3 at securityservices.packages.broadcom.com/hazelcast-enterprise (the
+built-in licence of 5.7.0-p3 expired 29 Sep 2026; the new one runs to 2099;
+step 5). All 25 pods Ready; OIDC discovery answers (build 4.1.0.1578).
+After Hazelcast came back, scheduler (~2.5 min start) and opa (waits for the
+scheduler) needed a few restarts to settle. ssp-data not installed yet.
+AgentMinder 4.1.1 (charts 4.1.1+1673) is in https://ssp_helm_charts.storage.googleapis.com
+(the repo root, not /agentminder-charts/, which stops at 4.1.0).
