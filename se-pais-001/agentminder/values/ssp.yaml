@@ -78,6 +78,15 @@ hazelcast-enterprise:
   cluster:
     memberCount: 1
   image:
+    # The image with the RENEWED Hazelcast Enterprise licence. The one in chart
+    # 4.1.0+1578 (5.7.0-p3) carries a licence that expired 29 Sep 2026: the
+    # pod exits with InvalidLicenseException and the platform stays down
+    # (lab 2026-10-15). Tag and digest from Broadcom's AgentMinder 4.1.1
+    # release notes, "Steps to update the Hazelcast license" (for 4.0.2 and
+    # later). With a tag set the chart pulls by tag; the digest is recorded so
+    # the image can be pinned (set tag "" to pull by digest).
+    tag: 5.7.1-p3
+    digest: sha256:0c28d9699818d19b0c01176b7c20edbf3af3cd468aef674c043238a4cf161dd2
     # A plain list of names under image.pullSecrets. The guide writes
     # image.imagePullSecrets, which this subchart ignores; its default is a
     # secret ssp-hazelcast-registrypullsecret that nothing creates, so the
