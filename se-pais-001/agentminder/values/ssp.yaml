@@ -16,9 +16,9 @@ ssp:
   deployment:
     size: demo            # single replica, 60 authentications/min
   ingress:
-    # REPLACE with the Gateway's sslip.io name before installing (step 5),
-    # e.g. agentminder.172-19-0-41.sslip.io. Same name as the Certificate.
-    host: agentminder.placeholder.invalid
+    # The Gateway's sslip.io name (Gateway address 172.19.0.31); same name as
+    # the Certificate in gateway.yaml. The chart also routes "mgmt-" + host.
+    host: agentminder.172-19-0-31.sslip.io
     type: gatewayapi
     tls:
       # The cert-manager certificate on our Gateway.

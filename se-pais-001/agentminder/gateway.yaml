@@ -35,11 +35,12 @@ spec:
   # Both names the ssp chart routes: the platform (ssp.ingress.host) and its
   # admin console, which the chart names "mgmt-" + host. sslip.io resolves
   # both to the IP in the name.
+  # The Gateway's address is 172.19.0.31 (Avi, 2026-10-15). To redo from
+  # scratch: placeholders first (agentminder.placeholder.invalid), read the
+  # new address, then these two names for it.
   dnsNames:
-  # Placeholders for the first apply; then agentminder.<ip-with-dashes>.sslip.io
-  # and mgmt-agentminder.<ip-with-dashes>.sslip.io
-  - agentminder.placeholder.invalid
-  - mgmt-agentminder.placeholder.invalid
+  - agentminder.172-19-0-31.sslip.io
+  - mgmt-agentminder.172-19-0-31.sslip.io
   issuerRef:
     kind: ClusterIssuer
     name: selfsigned
