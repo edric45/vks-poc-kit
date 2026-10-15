@@ -85,6 +85,10 @@ hazelcast-enterprise:
     # release notes, "Steps to update the Hazelcast license" (for 4.0.2 and
     # later). With a tag set the chart pulls by tag; the digest is recorded so
     # the image can be pinned (set tag "" to pull by digest).
+    # The renewed image lives OUTSIDE agentminder-images/ (as in chart
+    # 4.1.1+1673's own values); under the 4.1.0 chart's path the tag is
+    # "not found", so the release notes' tag+digest alone don't work on 4.1.0.
+    repository: securityservices.packages.broadcom.com/hazelcast-enterprise
     tag: 5.7.1-p3
     digest: sha256:0c28d9699818d19b0c01176b7c20edbf3af3cd468aef674c043238a4cf161dd2
     # A plain list of names under image.pullSecrets. The guide writes
