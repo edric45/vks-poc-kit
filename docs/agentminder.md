@@ -175,25 +175,26 @@ k -n agentminder get pods -w                       # all Running / Completed
 k -n agentminder get httproute                     # ssp-ssp-router-full, -mgmt: Accepted
 ```
 
-Hazelcast Enterprise needs a licence key and the guide sets none: Broadcom's
-image `agentminder-images/hazelcast-enterprise:5.7.0-p3` carries one in its
-environment (`hazelcast.licensekey=EwJm0*********96000`, as Hazelcast logs
-it). **In our lab on 2026-10-15 that key had expired**: the pod exits with
-`InvalidLicenseException: Enterprise License has expired!`, and every core
-service that needs the cache (admin, auth-mgr, azserver, identity, aigateway,
-opa, ...) stays unready; OIDC and the console don't answer. This needs a valid
-key or a newer image from Broadcom. With a key, the chart's own setting
-overrides the image's (the pod's env wins):
+Hazelcast licence: chart 4.1.0+1578 ships `hazelcast-enterprise:5.7.0-p3`,
+whose built-in Hazelcast Enterprise licence **expired on 29 Sep 2026** (all
+AgentMinder versions; Broadcom, AgentMinder 4.1.1 release notes). The pod
+then exits with `InvalidLicenseException: Enterprise License has expired!`
+and every service that needs the cache stays unready. `values/ssp.yaml`
+therefore pins Broadcom's renewed image, `5.7.1-p3` (release notes, "Steps to
+update the Hazelcast license", for 4.0.2 and later).
+
+If an install already runs the old image (as ours did, lab 2026-10-15):
 
 ```sh
-read -rs "HZ_KEY?Hazelcast licence key: "; echo
-k -n agentminder create secret generic hazelcast-license --from-literal=key="$HZ_KEY"; unset HZ_KEY
+h upgrade ssp ssp --repo $REPO --version 4.1.0+1578 -n agentminder \
+  -f se-pais-001/agentminder/values/ssp.yaml --set ssp.featureFlags.dataseed.enabled=false --timeout=120m
+# the StatefulSet (OrderedReady) won't replace a pod that never became Ready:
+k -n agentminder delete pod ssp-hazelcast-entp-0
+k -n agentminder get pod ssp-hazelcast-entp-0 -w        # 5.7.1-p3, 1/1 Running
 ```
 
-and in `values/ssp.yaml` under `hazelcast-enterprise.hazelcast`:
-`licenseKeySecretName: hazelcast-license`, then `h upgrade ssp ...` with the
-same arguments as the install. The subchart passes the secret's key `key` as
-`HZ_LICENSEKEY`, which overrides the image's built-in key (chart, statefulset.yaml).
+`dataseed.enabled=false` skips the seeding hook on that upgrade (the
+database is already seeded), as in Broadcom's command.
 
 ## 6. ssp-data: risk and network data
 
@@ -254,6 +255,6 @@ done, then remove pool np02 from `supervisor/clusters/se-pais-001/cluster.yaml` 
 server-side apply) and class eg Accepted; Gateway agentminder at
 172.19.0.31, certificate for agentminder / mgmt-agentminder
 .172-19-0-31.sslip.io; ssp-infra deployed (PXC ready, ClickHouse and keeper
-Completed); ssp deployed (dataseed done) but BLOCKED: Hazelcast's built-in
-Enterprise licence has expired, so 10 core services stay unready (see step 5).
-Waiting for a licence key or image from Broadcom. ssp-data not installed yet.
+Completed); ssp deployed, then upgraded to Broadcom's renewed Hazelcast image
+5.7.1-p3 (the built-in licence of 5.7.0-p3 expired 29 Sep 2026; step 5).
+ssp-data not installed yet.
