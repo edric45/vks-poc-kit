@@ -73,6 +73,7 @@ Shorthand used below:
 
 ```sh
 k()  { kubectl --context se-pais-001:se-pais-001 "$@"; }
+h()  { helm --kube-context se-pais-001:se-pais-001 "$@"; }   # Helm otherwise uses the CURRENT kubectl context
 REPO=https://ssp_helm_charts.storage.googleapis.com/agentminder-charts/
 ```
 
@@ -95,12 +96,17 @@ storage quota (above) or the VCF Automation organization's region quota.
 ## 2. Envoy Gateway
 
 ```sh
-# its own CRDs only (gateway.envoyproxy.io); Gateway API CRDs stay VKS's
-helm install eg-crds oci://docker.io/envoyproxy/gateway-crds-helm --version v1.7.2 \
-  --set crds.gatewayAPI.enabled=false --set crds.envoyGateway.enabled=true
-# the controller, without CRDs
-helm install eg oci://docker.io/envoyproxy/gateway-helm --version v1.7.2 \
-  -n envoy-gateway-system --create-namespace --skip-crds
+# its own CRDs only (8 x gateway.envoyproxy.io); Gateway API CRDs stay VKS's.
+# Rendered and applied server-side, NOT `helm install`: the bundle is ~2 MB and
+# Helm's release Secret is limited to 1 MiB ("Too long: may not be more than
+# 1048576 bytes", lab 2026-10-15).
+helm template eg-crds oci://docker.io/envoyproxy/gateway-crds-helm --version v1.7.2 \
+  --set crds.gatewayAPI.enabled=false --set crds.envoyGateway.enabled=true \
+  | k apply --server-side -f -
+k get crd | grep envoyproxy.io                     # 8
+# the controller, without CRDs (every helm command needs the context)
+h install eg oci://docker.io/envoyproxy/gateway-helm \
+  --version v1.7.2 -n envoy-gateway-system --create-namespace --skip-crds
 k -n envoy-gateway-system wait deployment/envoy-gateway --for=condition=Available --timeout=5m
 
 k apply -f se-pais-001/agentminder/envoy-gateway.yaml
@@ -153,7 +159,7 @@ cd $(mktemp -d) && helm pull ssp-infra --repo $REPO --version 4.1.0+1578 --untar
 # ClickHouse operator CRDs first (the chart refuses to install without them)
 k apply --server-side -f ssp-infra/charts/altinity-clickhouse-operator/crds/
 cd -
-helm install infra-ssp ssp-infra --repo $REPO --version 4.1.0+1578 -n agentminder \
+h install infra-ssp ssp-infra --repo $REPO --version 4.1.0+1578 -n agentminder \
   -f se-pais-001/agentminder/values/ssp-infra.yaml --timeout=120m
 k -n agentminder wait jobs --selector app.kubernetes.io/name=ssp-infra-create-db-job \
   --for=condition=complete --timeout=10m
@@ -163,7 +169,7 @@ k -n agentminder get pods,pvc       # pxc, clickhouse, keeper, operators Running
 ## 5. ssp: the platform
 
 ```sh
-helm install ssp ssp --repo $REPO --version 4.1.0+1578 -n agentminder \
+h install ssp ssp --repo $REPO --version 4.1.0+1578 -n agentminder \
   -f se-pais-001/agentminder/values/ssp.yaml --timeout=120m
 k -n agentminder get pods -w                       # all Running / Completed
 k -n agentminder get httproute                     # ssp-ssp-router-full, -mgmt: Accepted
@@ -176,7 +182,7 @@ error, ask the AgentMinder team.
 ## 6. ssp-data: risk and network data
 
 ```sh
-helm install data-ssp ssp-data --repo $REPO --version 2026.26 -n agentminder \
+h install data-ssp ssp-data --repo $REPO --version 2026.26 -n agentminder \
   -f se-pais-001/agentminder/values/ssp-data.yaml --timeout=60m
 k -n agentminder get jobs | grep -i data          # Completed
 ```
@@ -211,9 +217,11 @@ it: `k -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt
 ## Removing it
 
 ```sh
-helm uninstall data-ssp ssp infra-ssp -n agentminder
+h uninstall data-ssp ssp infra-ssp -n agentminder
 k delete -f se-pais-001/agentminder/gateway.yaml        # namespace, Gateway, certificate
-helm uninstall eg -n envoy-gateway-system && helm uninstall eg-crds
+h uninstall eg -n envoy-gateway-system
+helm template eg-crds oci://docker.io/envoyproxy/gateway-crds-helm --version v1.7.2 \
+  --set crds.gatewayAPI.enabled=false --set crds.envoyGateway.enabled=true | k delete -f -
 ```
 
 Left behind on purpose by Helm: the database PVC (cluster default class,
