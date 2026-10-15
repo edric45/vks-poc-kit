@@ -2,7 +2,8 @@
 #
 #   control plane  1 x best-effort-medium (2 vCPU / 8Gi)
 #                  disks: root, etcd 5Gi, containerd 20Gi, kubelet 20Gi
-#   workers        2 x best-effort-large  (4 vCPU / 16Gi), pool np01
+#   workers        6 x best-effort-large  (4 vCPU / 16Gi), pool np01
+#                  (2 until 2026-10-15; 6 for AgentMinder, docs/agentminder.md)
 #                  disks: root, containerd 50Gi, kubelet 50Gi
 #
 # Meant to be synced by ArgoCD. To apply by hand instead:
@@ -119,7 +120,10 @@ spec:
       # node-pool). name: this pool's name, unique within the cluster.
       - class: node-pool
         name: se-cluster-001-np01
-        replicas: 2
+        # 6, not 2: AgentMinder's demo install wants 5-6 nodes of 4 vCPU /
+        # 16 GB (docs/agentminder.md). Raising replicas only ADDS nodes; the
+        # existing ones are not replaced. Back to 2 when AgentMinder is gone.
+        replicas: 6
         variables:
           overrides:
           - name: vmClass

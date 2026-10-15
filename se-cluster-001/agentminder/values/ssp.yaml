@@ -1,0 +1,67 @@
+# ssp (chart 4.1.0+1578): the AgentMinder platform, demo size, with the
+# in-platform AI Gateway and observability on.
+#
+#   helm install ssp ssp --repo https://ssp_helm_charts.storage.googleapis.com/agentminder-charts/ \
+#     --version 4.1.0+1578 -n agentminder -f se-cluster-001/agentminder/values/ssp.yaml --timeout=120m
+#
+# Install ONLY after ssp-infra is up: this chart looks up the database
+# (PerconaXtraDBCluster) and ClickHouse in the cluster at install time and
+# fails if they are missing. (The same lookups are why it can't be synced by
+# ArgoCD, which renders charts without a cluster.)
+#
+# Based on the lab guide's demo file; differences on purpose:
+# - attaches to our Gateway "agentminder" (se-cluster-001/agentminder/gateway.yaml)
+#   instead of creating one, so the sslip.io name is known before install.
+ssp:
+  deployment:
+    size: demo            # single replica, 60 authentications/min
+  ingress:
+    # REPLACE with the Gateway's sslip.io name before installing (step 5),
+    # e.g. agentminder.172-17-10-41.sslip.io. Same name as the Certificate.
+    host: agentminder.placeholder.invalid
+    type: gatewayapi
+    tls:
+      # The cert-manager certificate on our Gateway.
+      secretName: agentminder-tls
+    gatewayApi:
+      gatewayType: envoy
+      createGateway: false
+      existingGateway: agentminder
+      skipWildcardListener: true
+      # Our Gateway has no port-80 listener to redirect from.
+      httpToHttpsRedirect: "false"
+  featureFlags:
+    aigateway:
+      enabled: true       # the in-platform AI Gateway (no separate chart)
+    nats:
+      enabled: true       # NATS JetStream, required for observability
+
+global:
+  image:
+    pullSecretNames:
+    - ssp-gcr-registry-creds
+  observe:
+    enabled: true         # AgentMinder agent telemetry -> ClickHouse
+  otelAcceptExternalRequests:
+    enabled: true         # accept OTLP from outside (e.g. an external AI Gateway)
+
+opentelemetry-collector:
+  imagePullSecrets:
+  - name: ssp-gcr-registry-creds
+
+nats:
+  config:
+    cluster:
+      enabled: false
+      replicas: 1
+  global:
+    image:
+      pullSecretNames:
+      - ssp-gcr-registry-creds
+
+hazelcast-enterprise:
+  cluster:
+    memberCount: 1
+  image:
+    imagePullSecrets:
+    - name: ssp-gcr-registry-creds

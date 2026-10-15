@@ -1,0 +1,68 @@
+# AgentMinder's namespace, TLS certificate and Gateway in se-cluster-001.
+#
+# Applied INSIDE se-cluster-001, BEFORE the AgentMinder charts
+# (docs/agentminder.md, step 3):
+#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/agentminder/gateway.yaml
+#
+# Why we create the Gateway (the guide lets the ssp chart do it): AgentMinder
+# is an OIDC provider, so it must know its own name (ssp.ingress.host) at
+# install, and that name is sslip.io for the Gateway's address
+# (agentminder.<ip-with-dashes>.sslip.io resolves to <ip>). The address only
+# exists once the Gateway does. So: Gateway first, read its address, then
+# set the real name here and in values/ssp.yaml, then install the charts
+# with createGateway: false + existingGateway: agentminder.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agentminder
+  labels:
+    # Not "restricted" (the VKS default): ssp-infra's database and ClickHouse
+    # operators and other parts set no seccomp profile.
+    pod-security.kubernetes.io/enforce: privileged
+---
+# From the cert-manager add-on's ClusterIssuer "selfsigned" (a private CA;
+# root in cert-manager/selfsigned-root-ca). First apply with the placeholder
+# name: the listener needs a valid certificate before the Gateway gets an
+# address. Then replace it with the sslip.io name and apply again;
+# cert-manager reissues the certificate in place.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentminder-tls
+  namespace: agentminder
+spec:
+  secretName: agentminder-tls
+  # Both names the ssp chart routes: the platform (ssp.ingress.host) and its
+  # admin console, which the chart names "mgmt-" + host. sslip.io resolves
+  # both to the IP in the name.
+  dnsNames:
+  # Placeholders for the first apply; then agentminder.<ip-with-dashes>.sslip.io
+  # and mgmt-agentminder.<ip-with-dashes>.sslip.io
+  - agentminder.placeholder.invalid
+  - mgmt-agentminder.placeholder.invalid
+  issuerRef:
+    kind: ClusterIssuer
+    name: selfsigned
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: agentminder
+  namespace: agentminder
+spec:
+  gatewayClassName: eg
+  listeners:
+  # One HTTPS listener, no hostname: the chart's HTTPRoutes carry the
+  # hostname. With an existing Gateway the chart attaches its routes without
+  # a listener name (sectionName), so the listener name is free.
+  - name: https
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: agentminder-tls
+    allowedRoutes:
+      namespaces:
+        from: Same

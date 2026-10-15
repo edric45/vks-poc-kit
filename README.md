@@ -26,12 +26,14 @@ supervisor/   applied to the Supervisor (context 172.17.10.2); each file names i
     se-pais-001/                 the PAIS support cluster in se-pais-tp7mm, same add-ons
   pais/
     model-endpoints.yaml       PAIS model endpoints in se-pais-tp7mm (CPU, llama.cpp)
+    observability-*.patch.yaml merge patches: PAIS traces to Phoenix, PAIS metrics (docs/observability.md)
   applications/
     se-cluster-001.yaml          the ArgoCD app for the cluster (manual sync)
     se-cluster-001-antrea-ui.yaml  Antrea UI (upstream Helm chart) in se-cluster-001, for visual Traceflow
     se-pais-001.yaml             the same for se-pais-001 (Application lives in se-pais-tp7mm)
     se-pais-001-pais-db.yaml     PAIS's database inside se-pais-001 (automatic sync)
     se-pais-001-mcp.yaml         the MCP gateway side inside se-pais-001 (automatic sync)
+    se-pais-001-observability.yaml  Phoenix, the trace backend for agents and MCP calls
   applicationsets/
     se-cluster-001-addons.yaml   one ArgoCD app per folder in addons/
     se-pais-001-addons.yaml      the same for se-pais-001
@@ -42,12 +44,14 @@ se-cluster-001/  applied inside the workload cluster (context se-cluster-001:se-
   headlamp-admin.yaml        Headlamp login (works around the add-on's RBAC bug)
   kube-bench-cis-2.0.yaml    one-off CIS Kubernetes Benchmark scan (docs/cis-scan.md)
   antrea-egress-test/        Antrea Egress test: clients, egress IP pools (Private, Public), Egress
+  agentminder/               AgentMinder 4.1 (Helm, by hand): Envoy Gateway class, Gateway + cert, chart values (docs/agentminder.md)
 se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
   storageclass-retain.yaml, istio-gatewayclass-defaults.yaml, headlamp-admin.yaml   as for se-cluster-001
   pais-db/postgres.yaml      PostgreSQL + pgvector for PAIS on VIP 172.19.0.24, synced by ArgoCD (password by hand)
   mcp/                       MCP marketplace for PAIS agents (docs/mcp-marketplace.md)
     gateway/                 agentgateway (VIP 172.19.0.28), consumer keys and rules, network policy
     servers/<name>/          one MCP server each (lab-facts, kubernetes, argocd) + catalog entry
+  observability/phoenix.yaml Arize Phoenix: traces of PAIS agents and gateway MCP calls
 vcfa/         synced into VCF Automation (All Apps org, git integration); one folder per blueprint
   blueprints/argocd-app-test/   test: a catalog request creates an ArgoCD Application
 se-pais-001/vcfa-test/          what that test Application deploys (a harmless ConfigMap)
@@ -57,6 +61,8 @@ docs/         reference for the whole project
   pais.md       Private AI Services: install, activation, fixes found on the way
   antrea-egress.md   Antrea Egress with a VLAN-backed NSX subnet: steps, YAML, results, Traceflow
   mcp-marketplace.md MCP marketplace on VKS: publish, discover, bind (GitOps, agentgateway)
+  observability.md   tracing agents and MCP calls (PAIS + agentgateway -> Phoenix), the agents and their jobs
+  agentminder.md     AgentMinder 4.1 on se-cluster-001: install steps, differences from Broadcom's lab guide
 ```
 
 ## Step 1: ArgoCD on the Supervisor

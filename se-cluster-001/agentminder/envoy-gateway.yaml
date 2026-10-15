@@ -1,0 +1,50 @@
+# The GatewayClass "eg" for AgentMinder: Envoy Gateway as a second Gateway API
+# controller in se-cluster-001, next to Istio (class "istio"). Each Gateway
+# names its class, so the two never touch each other's Gateways.
+#
+# Applied INSIDE se-cluster-001, after Envoy Gateway itself is installed
+# (docs/agentminder.md, step 2):
+#   kubectl --context se-cluster-001:se-cluster-001 apply -f se-cluster-001/agentminder/envoy-gateway.yaml
+#
+# Why Envoy Gateway v1.7.2 and not the guide's v1.8.1: v1.8 is built for
+# Gateway API v1.5 and its CRD bundle carries a policy that refuses Gateway
+# API CRDs older than v1.5. VKS installs and owns Gateway API v1.4.0, so 1.8
+# would fight it. v1.7.2 targets v1.4.1, and only its OWN CRDs are installed
+# (gateway-crds-helm with crds.envoyGateway.enabled=true, gatewayAPI off).
+# Cost: AgentMinder's optional mTLS mode verifyAtGateway=false needs 1.8+.
+
+# How Envoy Gateway runs the Envoy proxy pods for Gateways of this class.
+# Explicit security context so the proxy pods pass the Pod Security
+# "restricted" profile VKS enforces (the controller's own pod already does).
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: eg-restricted
+  namespace: envoy-gateway-system
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        pod:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile: {type: RuntimeDefault}
+        container:
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: eg
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: eg-restricted
+    namespace: envoy-gateway-system
