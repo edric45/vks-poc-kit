@@ -219,8 +219,9 @@ Admin console (default tenant, where DefaultTenantAdminUser lives):
 `https://$HOST/default/ui/v1/adminconsole/`. The bare `https://$HOST/` answers
 "Whitelabel Error Page, 404": AgentMinder is reached but serves nothing at
 `/`. Also: `/system/ui/v1/adminconsole/` (system tenant),
-`/default/ui/v1/signin/` (end-user sign-in); `mgmt-$HOST` serves the same
-paths (lab, 2026-10-15).
+`/default/ui/v1/signin/` (end-user sign-in). Use `$HOST`, not `mgmt-$HOST`,
+for the console: its login client only accepts redirects to `$HOST`
+("redirect_uri didn't match", 2026-10-16).
 
 The console's first page is a loader: it derives its base path from the
 address bar, stores it in a `__Secure-` cookie and reloads. A mistyped URL
@@ -231,6 +232,26 @@ Security > Certificates > View Certificates > Authorities > Import):
 Login worked this way (2026-10-15).
 The certificate is from the lab's private CA; to drop browser warnings, trust
 it: `k -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`.
+
+### Your own admin (before the bootstrap admin expires)
+
+There is no mail server (the lab guide leaves SMTP out), so "send a
+set-password email" sends nothing. Done this way, 2026-10-16:
+
+1. Settings > Identity Stores > internal: **Allow Admins to generate
+   password** ON; sign out and in again (new tokens carry the permission).
+2. Users > Add User > **Create a Temporary Password**; copy it from the
+   dialog (shown once). The user changes it at first login.
+3. Settings > Administrators > Grant Role: **Tenant Administrator**.
+4. Policies > **AdminLoginPolicy** > its rule "Auto provisioned login rule
+   for DefaultTenantAdminUser" > Users: add the new user, save the rule,
+   **Save Policy**. Without this the login is denied (the role alone doesn't
+   do it): auth-mgr logs `No applicable AuthN policies matched, returning
+   AUTH_DENIED`. Wait a minute before testing: the policy engine (opa) polls
+   for changes every 30-60 s.
+5. Settings > Service Configuration > **Admin Console SSO Maximum User
+   Sessions**: 3 by default; we set 15. The SSO fields higher up are greyed
+   out and don't apply (SSO Mode None).
 
 ## Upgrading to 4.1.1
 
@@ -246,6 +267,10 @@ image gets our pull secret):
 - the ClickHouse CRDs are byte-identical to 4.1.0's (re-applying is a no-op);
 - 4.1.1's default auditEvents stream is 10 GiB, which its own demo-size
   check rejects; `values/ssp.yaml` keeps it at 2 GiB.
+- 4.1.1's default NATS volume is 24Gi (was 12Gi); a StatefulSet's volume size
+  is immutable, so the upgrade stops with "NATS JetStream PVC resize - manual
+  steps required". `values/ssp.yaml` pins 12Gi: no resize, no orphaned
+  StatefulSet.
 
 ```sh
 R=https://ssp_helm_charts.storage.googleapis.com
@@ -262,7 +287,8 @@ h upgrade data-ssp ssp-data --repo $R --version 2026.42 -n agentminder \
   -f se-pais-001/agentminder/values/ssp-data.yaml --timeout=60m
 # 3. verify
 h ls -n agentminder
-curl -sk "https://$HOST/default/.well-known/openid-configuration" | grep buildVersion     # 4.1.1.1673
+k -n agentminder get pods -o jsonpath='{..image}' | tr ' ' '\n' | grep admin-svc | sort -u   # admin-svc:4.1.1.1673
+curl -sk -o /dev/null -w '%{http_code}\n' "https://$HOST/default/.well-known/openid-configuration"   # 200
 ```
 
 Don't interrupt the ssp upgrade while the dataseed job runs (watch it with
@@ -282,6 +308,24 @@ Don't interrupt the ssp upgrade while the dataseed job runs (watch it with
 | pods Pending | not enough room: `k describe pod`; workers (step 1) |
 | Helm step fails with x509 from a webhook | Gatekeeper's webhook certificate rotates now and then on se-pais-001; retry |
 | HTTPRoute not Accepted | `k -n agentminder describe httproute`; host must match the certificate and values |
+| login: "Too many user sessions" | admin console sessions per user hit the limit (default 3; factor log `allowed max user sessions: 3`). Pod restarts don't clear them (stored in the DB). Sign out from the user menu; or revoke them with the pre-seeded admin client, below |
+| login: "Application with the given id does not exist" | the browser replays an old login (e.g. after trying `mgmt-$HOST`); a new private window, then the console URL, not `/signin/` |
+| login denied for a new admin | AdminLoginPolicy doesn't list the user ("Your own admin", step 4) |
+
+Revoke all of one user's sessions (the user id is in the factor log line).
+The pre-seeded client `ssp-ssp-secret-defaulttenantclient` has the Tenant
+Administrator role, but its token needs the scope asked for explicitly
+(without it: "Unprivileged access token"):
+
+```sh
+CID=$(k -n agentminder get secret ssp-ssp-secret-defaulttenantclient -o jsonpath='{.data.clientId}' | base64 -d)
+TOKEN=$(k -n agentminder get secret ssp-ssp-secret-defaulttenantclient -o jsonpath='{.data.clientSecret}' | base64 -d | \
+  curl -sk https://$HOST/default/oauth2/v1/token -d grant_type=client_credentials -d client_id="$CID" \
+    --data-urlencode 'scope=urn:iam:t.session' --data-urlencode client_secret@- | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" https://$HOST/default/admin/v1/UsersSessions/<user-id>
+unset TOKEN CID
+```
 
 ## Removing it
 
@@ -312,3 +356,8 @@ After Hazelcast came back, scheduler (~2.5 min start) and opa (waits for the
 scheduler) needed a few restarts to settle. ssp-data not installed yet.
 AgentMinder 4.1.1 (charts 4.1.1+1673) is in https://ssp_helm_charts.storage.googleapis.com
 (the repo root, not /agentminder-charts/, which stops at 4.1.0).
+
+2026-10-16: upgraded to 4.1.1 (infra-ssp and ssp 4.1.1+1673, data-ssp
+2026.42), without a DB backup (lab). All 25 services Running; dataseed (4
+min), NATS stream init and network data jobs Complete; Hazelcast rolled by
+itself. Permanent admin created; bootstrap admin may expire.

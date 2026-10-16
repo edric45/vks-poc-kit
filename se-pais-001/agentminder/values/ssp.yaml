@@ -71,6 +71,14 @@ nats:
     cluster:
       enabled: false
       replicas: 1
+    jetstream:
+      fileStore:
+        pvc:
+          # Chart 4.1.1 raised the default to 24Gi; a StatefulSet's volume size
+          # can't change in place, so the upgrade stops and asks for a manual
+          # PVC resize. The five streams are capped at 2 GiB each (demo), so
+          # the 12Gi from 4.1.0 is enough.
+          size: 12Gi
   # The chart turns on a Prometheus Operator PodMonitor for NATS; no such
   # type on VKS (see the same note in ssp-infra.yaml).
   promExporter:
