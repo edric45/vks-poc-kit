@@ -1,0 +1,149 @@
+# am-docs-agent: the first agent with an AgentMinder identity (Autonomous mode).
+# No LLM yet: the script makes fixed tool calls, so what it shows is the
+# identity and the policy, not a model's choices:
+#
+#   am-docs-agent (this Job, ns agents)
+#     -- client_credentials -->  AgentMinder token endpoint: token azp/sub = am-docs-agent
+#     -- MCP + token + mission -->  AgentMinder AI Gateway (ns agentminder)
+#                                     allowed? policy ∩ mission intents
+#                                   --> lab-facts (ns mcp)
+#
+# Expected: check_vip is allowed, runbook_tip is refused (its intent is not
+# granted to am-docs-agent), and both decisions are in AgentMinder's audit log.
+#
+# Not in git, created by hand (docs/agentminder-agents.md):
+#   ConfigMap agentminder-sdk  the SDK wheel (Broadcom download; proprietary,
+#                              and this repo is public)
+#   ConfigMap lab-ca           the lab root CA, to trust AgentMinder's certificate
+#   Secret am-docs-agent          the agent's and the orchestrator's client secrets
+#
+# Run: kubectl apply -f this file; read the result with kubectl logs job/am-docs-agent.
+# Again: kubectl delete job am-docs-agent, then apply.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agents
+  # No pod-security label: the Job below meets "restricted", the VKS default.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: am-docs-agent
+  namespace: agents
+data:
+  agent.py: |
+    """am-docs-agent: one autonomous agent, two tool calls, one allowed, one refused."""
+    import json
+    import os
+
+    from agentminder import AgentMinderClient, McpResource
+    from agentminder.exceptions import AgentMinderError
+
+    LABFACTS = McpResource(
+        name="labfacts",
+        url=os.environ["LABFACTS_URL"],
+        audience=os.environ["LABFACTS_AUDIENCE"],
+    )
+
+    def show_identity(am):
+        # Claims of the token the SDK just used (the token itself is never printed).
+        c = am.last_token_claims or {}
+        keep = ("iss", "sub", "azp", "aud", "scope", "act", "exp")
+        print("  token claims:", json.dumps({k: c[k] for k in keep if k in c}))
+
+    def call(am, agent, mission, tool, args):
+        print(f"\n> {tool} {json.dumps(args)}")
+        try:
+            print("  ALLOWED:", json.dumps(am.call_tool(agent=agent, mission=mission,
+                  resource="labfacts", tool_name=tool, arguments=args))[:400])
+        except AgentMinderError as e:
+            # PolicyDeniedError / IntentNotAuthorizedError carry the reason and txn_id,
+            # which is how to find this call in AgentMinder's logs.
+            print(f"  REFUSED: {type(e).__name__}: {e} (txn {getattr(e, 'txn_id', None)})")
+        show_identity(am)
+
+    with AgentMinderClient.from_env() as am:
+        print("AgentMinder:", json.dumps(am.server_capabilities()))
+        agent = am.agent(client_id=os.environ["AGENT_CLIENT_ID"],
+                         client_secret=os.environ["AGENT_CLIENT_SECRET"],
+                         resources=[LABFACTS])
+
+        mission = None
+        if os.environ.get("MISSION_TYPE"):
+            mission = am.create_mission(agent=agent, mission_type=os.environ["MISSION_TYPE"])
+            print(f"mission {mission.mission_id}: intents {sorted(mission.allowed_intents)}")
+
+        # tools/list is filtered by the gateway to the tools this agent may call.
+        with am.mcp_connect(agent, mission, resource="labfacts") as mcp:
+            print("tools visible to am-docs-agent:", [t.name for t in mcp.list_tools()])
+
+        call(am, agent, mission, "check_vip", {"ip": "172.19.0.31"})
+        call(am, agent, mission, "runbook_tip", {"topic": "pais-db-ca"})
+
+        if mission:
+            am.complete_mission(mission)
+            print("\nmission completed")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: am-docs-agent
+  namespace: agents
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: agent
+        image: docker.io/library/python:3.12.11-slim
+        # The SDK and its dependencies come from the wheel plus PyPI at start-up
+        # (se-pais-001 has internet egress); fine for a lab Job, not for a
+        # customer: there, bake an image and push it to Harbor.
+        command: [sh, -c]
+        args:
+        - pip install --quiet --no-cache-dir --target /tmp/py /sdk/agentminder-0.1.0-py3-none-any.whl
+          && PYTHONPATH=/tmp/py exec python -u /app/agent.py
+        env:
+        - {name: HOME, value: /tmp}
+        - {name: AGENTMINDER_IDSP_URL, value: "https://agentminder.172-19-0-31.sslip.io/default"}
+        - {name: AGENTMINDER_CA_BUNDLE, value: /ca/ca.crt}
+        - name: AGENTMINDER_ORCHESTRATOR_CLIENT_ID
+          valueFrom: {secretKeyRef: {name: am-docs-agent, key: orchestratorClientId}}
+        - name: AGENTMINDER_ORCHESTRATOR_CLIENT_SECRET
+          valueFrom: {secretKeyRef: {name: am-docs-agent, key: orchestratorClientSecret}}
+        - name: AGENT_CLIENT_ID
+          valueFrom: {secretKeyRef: {name: am-docs-agent, key: agentClientId}}
+        - name: AGENT_CLIENT_SECRET
+          valueFrom: {secretKeyRef: {name: am-docs-agent, key: agentClientSecret}}
+        # From the console: the lab-facts AI Resource Server's gateway route and
+        # audience (docs/agentminder-agents.md, step 1).
+        - {name: LABFACTS_URL, value: "REPLACE_GATEWAY_ROUTE"}
+        - {name: LABFACTS_AUDIENCE, value: "REPLACE_AUDIENCE"}
+        - {name: MISSION_TYPE, value: "LabLookup"}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {memory: 512Mi}
+        volumeMounts:
+        - {name: app, mountPath: /app}
+        - {name: sdk, mountPath: /sdk}
+        - {name: ca, mountPath: /ca}
+        - {name: tmp, mountPath: /tmp}
+      volumes:
+      - name: app
+        configMap: {name: am-docs-agent}
+      - name: sdk
+        configMap: {name: agentminder-sdk}
+      - name: ca
+        configMap: {name: lab-ca}
+      - name: tmp
+        emptyDir: {}

@@ -41,3 +41,25 @@ spec:
   - from:
     - podSelector:
         matchLabels: {app: agentgateway}
+---
+# AgentMinder's AI Gateway (se-pais-001, namespace agentminder) is a second
+# front door, for lab-facts only: agents registered in AgentMinder call
+# lab-facts through it (docs/agentminder-agents.md). Same rule as above: the
+# server takes traffic from a gateway, never from an agent directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-facts-from-agentminder
+  namespace: mcp
+spec:
+  podSelector:
+    matchLabels: {app: lab-facts}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels: {kubernetes.io/metadata.name: agentminder}
+      podSelector:
+        matchLabels: {app: ssp-aigateway}
+    ports:
+    - {protocol: TCP, port: 8000}

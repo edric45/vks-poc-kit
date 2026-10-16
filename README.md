@@ -52,6 +52,7 @@ se-pais-001/     applied inside se-pais-001 (context se-pais-001:se-pais-001)
     servers/<name>/          one MCP server each (lab-facts, kubernetes, argocd) + catalog entry
   observability/phoenix.yaml Arize Phoenix: traces of PAIS agents and gateway MCP calls
   agentminder/               AgentMinder 4.1 (Helm, by hand): Envoy Gateway class, Gateway + cert, chart values (docs/agentminder.md)
+  agents/                    am-docs-agent: a custom agent with the AgentMinder SDK (docs/agentminder-agents.md)
 vcfa/         synced into VCF Automation (All Apps org, git integration); one folder per blueprint
   blueprints/argocd-app-test/   test: a catalog request creates an ArgoCD Application
 se-pais-001/vcfa-test/          what that test Application deploys (a harmless ConfigMap)
@@ -63,6 +64,7 @@ docs/         reference for the whole project
   mcp-marketplace.md MCP marketplace on VKS: publish, discover, bind (GitOps, agentgateway)
   observability.md   tracing agents and MCP calls (PAIS + agentgateway -> Phoenix), the agents and their jobs
   agentminder.md     AgentMinder 4.1 on se-pais-001: install steps, differences from Broadcom's lab guide
+  agentminder-agents.md  AgentMinder Part B: PAIS agents through AgentMinder's gateway; an SDK agent
 ```
 
 ## Step 1: ArgoCD on the Supervisor

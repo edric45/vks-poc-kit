@@ -160,6 +160,66 @@ Layers, each enforced on its own:
 | NetworkPolicy | namespace mcp | anything in se-pais-001 reaching the MCP servers past the gateway |
 | `--read-only` + RBAC `view` | kubernetes-mcp | writes and Secrets, whatever the caller |
 
+## 8. API tokens for programs (local account)
+
+Programs (an agent pod, Open WebUI) call the models at
+`https://172.19.0.25/api/v1/compatibility/openai/v1` with `Authorization:
+Bearer <API token>`. Without one the API answers 401. In PAIS 3.0 only the
+**staticCredentials** provider (local accounts) issues API tokens, and only
+when its `apiTokens` block is set (`kubectl explain
+paisconfigurations.spec.auth.providers.staticCredentials.apiTokens`: "When
+omitted, the provider supports interactive OIDC login only"). The `oidc` and
+`vcfa` providers have no such setting. Our activation wrote the deprecated
+`spec.auth.oidc` (step 3), so no tokens existed (checked 2026-10-16).
+
+The local-accounts secret (`pais-static-credentials-<id>`, key
+`credentials.json`) has no published format, so let the UI create it, then
+add `apiTokens` by hand (Broadcom 3.0 known issue "API tokens are not turned on
+when you activate Private AI Services by using the UI"; William Lam,
+"Deploying Your Own AI Models with VCF PAIS 3.0", steps 5-7).
+
+**Blocked on VCF 9.1.0 (lab, 2026-10-16):** the PAIS form here (Service
+Configuration > OIDC > Edit) edits the one OIDC login only; it has no Local
+User Accounts option (Broadcom's guide and Lam's post use a newer VCF
+Automation). By hand it needs the `credentials.json` format, which is not
+published ("See the staticCredentials documentation"). Open: ask the PAIS team
+for that format. The steps below are for a UI that has the option.
+
+```sh
+K() { kubectl --context 172.17.10.2 -n se-pais-tp7mm "$@"; }
+# 0. rollback copy, outside git
+K get paisconfiguration default -o yaml > ~/paisconfiguration-before-tokens.yaml
+```
+
+1. VCF Automation > Build & Deploy > se-pais-tp7mm > Private AI > edit the
+   configuration. Keep the OIDC provider as it is. Turn on **Local User
+   Accounts**, add user `agents-svc` with a generated password (keep it in your
+   vault). **Issuer Base URL** `https://172.19.0.25`: the form wants a valid
+   HTTPS URL there (Lam: "a known UI quirk"). Save.
+2. Check what the UI wrote: both providers under `spec.auth.providers`, the
+   static one with `credentialsSecretRef`:
+   ```sh
+   K get paisconfiguration default -o jsonpath='{range .spec.auth.providers[*]}{.name}{" "}{.staticCredentials.credentialsSecretRef.name}{.oidc.issuerUrl}{"\n"}{end}'
+   ```
+3. Turn on API tokens for the static provider (30 days default, 1 year max):
+   ```sh
+   I=$(K get paisconfiguration default -o json | python3 -c 'import json,sys; p=json.load(sys.stdin)["spec"]["auth"]["providers"]; print([i for i,x in enumerate(p) if "staticCredentials" in x][0])')
+   K patch paisconfiguration default --type json --dry-run=server -p "[{\"op\":\"add\",\"path\":\"/spec/auth/providers/$I/staticCredentials/apiTokens\",\"value\":{\"expirationDefault\":\"720h\",\"expirationMax\":\"8760h\"}}]"
+   # same without --dry-run=server, then wait for READY True
+   K get paisconfiguration default -w
+   ```
+4. Log in at `https://172.19.0.25/` as `agents-svc` (the login page now offers
+   both providers); user menu (upper right) > **API Tokens** > generate. Check:
+   ```sh
+   read -rs "PAIS_API_KEY?PAIS API token: "; echo
+   curl -sk https://172.19.0.25/api/v1/compatibility/openai/v1/models -H "Authorization: Bearer $PAIS_API_KEY" | head -c 400
+   ```
+   `qwen-chat` and `nomic-embed` should be listed.
+5. Your own OIDC login still works (log in once as before).
+
+Rollback: `K replace -f ~/paisconfiguration-before-tokens.yaml` (status and
+resourceVersion fields may need removing first).
+
 ## Status (2026-10-11)
 
 PAIS Ready, UI reachable. Models in Harbor project se-pais-models:
