@@ -45,6 +45,13 @@ ssp:
       enabled: true       # the in-platform AI Gateway (no separate chart)
     nats:
       enabled: true       # NATS JetStream, required for observability
+      streams:
+        # Chart 4.1.1 raised auditEvents' default to 10 GiB, but its own check
+        # for size=demo allows at most 2 GiB per stream and then refuses to
+        # render ("NATS configuration is not demo-compatible"). 2 GiB is what
+        # 4.1.0 used; NATS's volume is 12Gi.
+        auditEvents:
+          maxBytes: 2147483648
 
 global:
   image:

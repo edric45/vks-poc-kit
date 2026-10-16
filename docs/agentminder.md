@@ -232,6 +232,42 @@ Login worked this way (2026-10-15).
 The certificate is from the lab's private CA; to drop browser warnings, trust
 it: `k -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`.
 
+## Upgrading to 4.1.1
+
+Broadcom: "Upgrading AgentMinder" (in place; the dataseed job migrates the
+schema). 4.1 -> 4.1.1 directly. Charts `4.1.1+1673` are in the repo ROOT
+`https://ssp_helm_charts.storage.googleapis.com`; the guide's
+`/agentminder-charts/` path stops at 4.1.0. Checked 2026-10-16 by rendering
+4.1.1 with our values (all types present on the cluster, every Broadcom
+image gets our pull secret):
+
+- images move from `securityservices.packages.broadcom.com/agentminder-images/<name>`
+  to `securityservices.packages.broadcom.com/<name>` (NATS too);
+- the ClickHouse CRDs are byte-identical to 4.1.0's (re-applying is a no-op);
+- 4.1.1's default auditEvents stream is 10 GiB, which its own demo-size
+  check rejects; `values/ssp.yaml` keeps it at 2 GiB.
+
+```sh
+R=https://ssp_helm_charts.storage.googleapis.com
+# 0. token can read the new path (prompts for the token)
+curl -u '<portal e-mail>' https://securityservices.packages.broadcom.com/v2/admin-svc/tags/list   # 4.1.1.1673
+# 1. backups, kept OUT of git: the MEK (Broadcom: losing it loses encrypted data) and a DB dump
+k -n agentminder get secret ssp-ssp-keys-mek -o jsonpath='{.data.mek\.key}' | base64 -d > ~/agentminder-mek.key
+# 2. infra, then platform (dataseed ON: it migrates the schema), then data
+h upgrade infra-ssp ssp-infra --repo $R --version 4.1.1+1673 -n agentminder \
+  -f se-pais-001/agentminder/values/ssp-infra.yaml --timeout=120m
+h upgrade ssp ssp --repo $R --version 4.1.1+1673 -n agentminder \
+  -f se-pais-001/agentminder/values/ssp.yaml --set ssp.featureFlags.dataseed.enabled=true --timeout=120m
+h upgrade data-ssp ssp-data --repo $R --version 2026.42 -n agentminder \
+  -f se-pais-001/agentminder/values/ssp-data.yaml --timeout=60m
+# 3. verify
+h ls -n agentminder
+curl -sk "https://$HOST/default/.well-known/openid-configuration" | grep buildVersion     # 4.1.1.1673
+```
+
+Don't interrupt the ssp upgrade while the dataseed job runs (watch it with
+`k -n agentminder get pods -l job-name=ssp-ssp-dataseed-job -w`).
+
 ## Troubleshooting
 
 | Symptom | Look at |
