@@ -1,0 +1,41 @@
+# Claude as a PAIS model, next to qwen-chat: an InferenceGatewayRoute sends
+# requests for routing name "claude" to Anthropic's API with our key. Nothing
+# runs in the lab; agents pick "claude" like a local model.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/pais/claude-route.yaml
+#   kubectl --context 172.17.10.2 -n se-pais-tp7mm get inferencegatewayroutes
+#
+# Engine OpenAI: PAIS's engine for any OpenAI-compatible API. Anthropic's
+# OpenAI SDK compatibility layer lives under https://api.anthropic.com/v1 and
+# takes the Anthropic API key as the bearer token. Anthropic positions it for
+# trying models, not production; its native Messages API has the full feature
+# set, which PAIS 3.0 has no engine for.
+#
+# Not private: prompts and tool results go to Anthropic. Lab data only.
+#
+# The key, by hand (docs/pais.md, "Claude"):
+#   Secret anthropic-api-token, type pais.vmware.com/api-token-credentials, key api_token
+apiVersion: pais.vmware.com/v1alpha1
+kind: InferenceGatewayRoute
+metadata:
+  name: claude
+  namespace: se-pais-tp7mm
+spec:
+  type: Completions
+  engine: OpenAI
+  matches:
+    routingName: claude
+  backend:
+    # Without /v1: PAIS appends /v1/... itself (its own routes are written this way).
+    # Through anthropic-shim (anthropic-shim.yaml): Anthropic answers PAIS's
+    # bearer-token /v1/models check with 400, so direct to api.anthropic.com
+    # the route never gets Ready. Same short Service-name form as PAIS's own routes.
+    httpBaseUrl: http://anthropic-shim:8080
+    # Fast and cheap for an agent picking tools; claude-sonnet-5-5 for harder tasks.
+    modelId: claude-haiku-5-5
+    auth:
+      apiTokenRef:
+        name: anthropic-api-token
+    # Plain HTTP inside the namespace (the schema requires an empty tls for
+    # http://); the shim speaks TLS to Anthropic.
+    tls: {}

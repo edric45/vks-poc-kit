@@ -1,0 +1,36 @@
+# An OpenAI model in PAIS, next to qwen-chat: an InferenceGatewayRoute sends
+# requests for routing name "openai" to OpenAI's API with our key. Nothing
+# runs in the lab; agents pick "openai" like a local model.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/pais/openai-route.yaml
+#   kubectl --context 172.17.10.2 -n se-pais-tp7mm get inferencegatewayroute openai \
+#     -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.message}{"\n"}{end}'
+#
+# Engine OpenAI, base URL without /v1 (PAIS appends /v1/... itself; its own
+# routes are written that way). Unlike Anthropic, OpenAI answers PAIS's
+# readiness check (GET /v1/models with the key as bearer), so no shim.
+#
+# Not private: prompts and tool results go to OpenAI. Lab data only.
+#
+# The key, by hand (docs/pais.md, "OpenAI"):
+#   Secret openai-api-token, type pais.vmware.com/api-token-credentials, key api_token
+apiVersion: pais.vmware.com/v1alpha1
+kind: InferenceGatewayRoute
+metadata:
+  name: openai
+  namespace: se-pais-tp7mm
+spec:
+  type: Completions
+  engine: OpenAI
+  matches:
+    routingName: openai
+  backend:
+    httpBaseUrl: https://api.openai.com
+    # A model your key can use, from the list (docs/pais.md): a small, fast
+    # one is enough for an agent picking tools.
+    modelId: REPLACE_OPENAI_MODEL
+    auth:
+      apiTokenRef:
+        name: openai-api-token
+    tls:
+      verification: strict

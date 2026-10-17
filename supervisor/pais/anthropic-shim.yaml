@@ -1,0 +1,160 @@
+# anthropic-shim: lets PAIS use Claude through an InferenceGatewayRoute.
+#
+# Why: PAIS checks a remote model by calling <httpBaseUrl>/v1/models with the
+# route's key as a bearer token. Anthropic's OpenAI-compatible API serves chat
+# with a bearer token, but lists models only with its own x-api-key header,
+# so the check fails ("HTTP error for /models. HTTP status: 400") and the
+# route never gets Ready (lab, 2026-10-16). This shim:
+#   GET /v1/models[/id]  -> Anthropic's native model list (x-api-key = the bearer
+#                           PAIS sent), answered in OpenAI's format
+#   everything else /v1/ -> passed to https://api.anthropic.com unchanged (streams too)
+# It holds no key: the key stays in the route's Secret (anthropic-api-token).
+#
+# Applied by hand to the Supervisor (namespace se-pais-tp7mm, a vSphere Pod).
+# Reached only by PAIS in this namespace, through the Service name (no VIP).
+#   PAIS route "claude" -> http://anthropic-shim:8080 -> api.anthropic.com
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anthropic-shim
+  namespace: se-pais-tp7mm
+data:
+  shim.py: |
+    """OpenAI-format /v1/models for Anthropic; everything else passed through."""
+    import http.client
+    import json
+    import ssl
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    UPSTREAM = "api.anthropic.com"
+    TLS = ssl.create_default_context()
+    # Not forwarded either way (RFC 9110 hop-by-hop, plus the ones we set ourselves).
+    HOP = {"connection", "keep-alive", "transfer-encoding", "content-length", "host",
+           "te", "trailer", "upgrade", "proxy-authorization", "proxy-connection"}
+
+    def upstream(method, path, headers, body=None):
+        conn = http.client.HTTPSConnection(UPSTREAM, context=TLS, timeout=300)
+        conn.request(method, path, body=body, headers=headers)
+        return conn, conn.getresponse()
+
+    # Sent by PAIS Agent Builder on every request, refused by the newest Claude
+    # models ("`temperature` is deprecated for this model", lab 2026-10-16).
+    UNSUPPORTED = ("temperature",)
+
+    def drop_unsupported(body):
+        try:
+            req = json.loads(body)
+        except ValueError:
+            return body
+        for field in UNSUPPORTED:
+            req.pop(field, None)
+        return json.dumps(req).encode()
+
+    def as_openai(m):
+        return {"id": m["id"], "object": "model", "created": 0, "owned_by": "anthropic"}
+
+    class Shim(BaseHTTPRequestHandler):
+        def send_json(self, code, obj):
+            b = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                return self.send_json(200, {"status": "ok"})
+            if self.path.startswith("/v1/models"):
+                auth = self.headers.get("Authorization", "")
+                key = auth[7:] if auth.startswith("Bearer ") else ""
+                conn, r = upstream("GET", self.path,
+                                   {"x-api-key": key, "anthropic-version": "2023-06-01"})
+                data = json.loads(r.read() or b"{}")
+                conn.close()
+                if r.status != 200:
+                    return self.send_json(r.status, data)
+                if "id" in data:                       # /v1/models/<id>
+                    return self.send_json(200, as_openai(data))
+                return self.send_json(200, {"object": "list",
+                                            "data": [as_openai(m) for m in data.get("data", [])]})
+            self.passthrough()
+
+        def do_POST(self):
+            self.passthrough()
+
+        def passthrough(self):
+            if not self.path.startswith("/v1/"):       # not an open proxy
+                return self.send_json(404, {"error": "not found"})
+            n = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(n) if n else None
+            if body and self.path.startswith("/v1/chat/completions"):
+                body = drop_unsupported(body)
+            headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
+            conn, r = upstream(self.command, self.path, headers, body)
+            # HTTP/1.0 reply, closed at the end: streamed (SSE) answers pass
+            # through chunk by chunk without re-framing.
+            self.send_response(r.status)
+            for k, v in r.getheaders():
+                if k.lower() not in HOP:
+                    self.send_header(k, v)
+            self.end_headers()
+            while chunk := r.read1(8192):
+                self.wfile.write(chunk)
+                self.wfile.flush()
+            conn.close()
+
+        def log_message(self, fmt, *args):
+            # Method, path and status only: never headers (they carry the key).
+            print(f"{self.command} {self.path} {args[1] if len(args) > 1 else ''}", flush=True)
+
+    print("anthropic-shim on :8080", flush=True)
+    ThreadingHTTPServer(("", 8080), Shim).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anthropic-shim
+  namespace: se-pais-tp7mm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: anthropic-shim}
+  template:
+    metadata:
+      labels: {app: anthropic-shim}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: shim
+        image: docker.io/library/python:3.12.11-slim
+        command: [python, -u, /app/shim.py]
+        ports:
+        - {name: http, containerPort: 8080}
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8080}
+          periodSeconds: 10
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        resources:
+          requests: {cpu: 100m, memory: 64Mi}
+          limits: {cpu: 500m, memory: 256Mi}
+        volumeMounts:
+        - {name: app, mountPath: /app, readOnly: true}
+      volumes:
+      - name: app
+        configMap: {name: anthropic-shim}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: anthropic-shim
+  namespace: se-pais-tp7mm
+spec:
+  selector: {app: anthropic-shim}
+  ports:
+  - {name: http, port: 8080, targetPort: 8080}

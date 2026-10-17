@@ -30,6 +30,25 @@ Validation then fails at Signature Verification ("Image ... does not exist").
 
 - Add a Supervisor container registry for `pais-docker.packages.broadcom.com`
   with a Broadcom token. It does not need to be the default registry.
+- **That token goes stale silently** (lab, 2026-10-16): a new registry token
+  from the Broadcom Support Portal (made for AgentMinder) invalidated the one
+  in the Supervisor registry. Running pods kept their images; the next new PAIS
+  pod (Prometheus) failed: `failed to fetch oauth token ...
+  pais-docker.packages.broadcom.com ... 401`. PAIS's pull secret
+  `pais-pais-reg-creds-*` is a copy (secretgen) of
+  `kube-system/image-registry-credentials`, so fix it at the source: vCenter >
+  Supervisor > Configure > Container Registries, edit the entry, current token.
+  **Warning:** saving that entry rolls the nodes of every VKS cluster on the
+  Supervisor, all namespaces and teams (2026-10-16: ~30 new machines in 9
+  namespaces, PAIS's own cluster included, so PAIS and its model endpoints are
+  down until the rollout ends). Announce it first; on a shared Supervisor,
+  agree a time. Adding a registry does the same: se-pais-001 started a new
+  MachineSet 28 s after this registry was created (2026-10-10 08:29:37Z). The
+  entry is a cluster-scoped `ClusterRegistryConfig` sharing the Secret
+  `kube-system/image-registry-credentials` with the other registries; the one
+  cluster on a custom ClusterClass (custom-cidr-generic) did not roll, so the
+  built-in ClusterClass is what carries registries into the nodes.
+  For a customer: a service account's token, not a person's.
 - Both files carry version 3.0.0. To replace one with the other, deactivate
   and delete the whole service in vCenter first; otherwise the old package
   survives on the Supervisor. Check with:
@@ -219,6 +238,105 @@ K get paisconfiguration default -o yaml > ~/paisconfiguration-before-tokens.yaml
 
 Rollback: `K replace -f ~/paisconfiguration-before-tokens.yaml` (status and
 resourceVersion fields may need removing first).
+
+## 9. Gemini as a remote model
+
+PAIS 3.0 can route a model name to a model hosted elsewhere:
+`InferenceGatewayRoute` (`kubectl explain inferencegatewayroutes.spec`).
+Engines: `OpenAI` (any OpenAI-compatible API, also another PAIS),
+`GoogleVertexAI` (recommended for Google Cloud), `GoogleGemini` (native Gemini
+API), `GoogleOpenAI` (Google's OpenAI-compatible API), `Mistral` (reserved).
+The key goes in a Secret of type `pais.vmware.com/api-token-credentials`, key
+`api_token`. Not on the VCF Automation "Deploy Model Endpoint" form (that one
+deploys models from Harbor).
+
+`supervisor/pais/gemini-route.yaml` uses `GoogleOpenAI` with an AI Studio
+key (free tier: Google may use the data; lab only).
+
+```sh
+K() { kubectl --context 172.17.10.2 -n se-pais-tp7mm "$@"; }
+read -rs "GKEY?Gemini API key: "; echo
+# which models this key may use (pick a "gemini-…flash" one for agents)
+curl -s https://generativelanguage.googleapis.com/v1beta/openai/models -H "Authorization: Bearer $GKEY" \
+  | python3 -c 'import json,sys; [print(m["id"]) for m in json.load(sys.stdin)["data"] if "gemini" in m["id"]]'
+K create secret generic gemini-api-token --type=pais.vmware.com/api-token-credentials --from-literal=api_token="$GKEY"
+unset GKEY
+```
+
+Set `modelId` in the file to one of the listed ids (without a `models/`
+prefix), then:
+
+```sh
+K apply -f supervisor/pais/gemini-route.yaml
+K get inferencegatewayroute gemini -o jsonpath='{.status}'; echo
+```
+
+In Agent Builder, `gemini` should be offered as a model next to qwen-chat.
+To test: that PAIS reaches Google (egress from the Supervisor), and that agents
+can pick a route.
+
+### Claude
+
+`supervisor/pais/claude-route.yaml`: engine `OpenAI`, base URL
+`https://api.anthropic.com` (PAIS adds `/v1`; Anthropic's OpenAI SDK compatibility layer;
+the Anthropic API key is the bearer token), model `claude-haiku-5-5`. Gemini
+is on hold (AI Studio keys restricted for us, 2026-10-16).
+
+```sh
+K() { kubectl --context 172.17.10.2 -n se-pais-tp7mm "$@"; }
+read -rs "AKEY?Anthropic API key: "; echo
+# the key works, and through the same compatibility layer PAIS will use:
+curl -s https://api.anthropic.com/v1/chat/completions -H "Authorization: Bearer $AKEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"claude-haiku-5-5","max_tokens":20,"messages":[{"role":"user","content":"Say ok"}]}' | head -c 300; echo
+K create secret generic anthropic-api-token --type=pais.vmware.com/api-token-credentials --from-literal=api_token="$AKEY"
+unset AKEY
+K apply -f supervisor/pais/claude-route.yaml
+K get inferencegatewayroute claude -o jsonpath='{.status}'; echo
+```
+
+**Found 2026-10-16:** direct to Anthropic the route stays not Ready:
+`ModelAvailable=False … HTTP error for /models. HTTP status: 400`. PAIS checks
+`<httpBaseUrl>/v1/models` with the key as a bearer token (it adds `/v1`
+itself, so httpBaseUrl has none); Anthropic lists models only with
+`x-api-key`. Chat with the bearer works. Fix: `supervisor/pais/anthropic-shim.yaml`
+(stdlib Python, a vSphere Pod and Service in this namespace) answers
+`/v1/models` in OpenAI format from Anthropic's native list and passes
+everything else through; the route points at `http://anthropic-shim:8080`
+(an `http://` backend needs `tls: {}`). The shim holds no key. An OpenAI key
+would not need it.
+
+```sh
+K apply -f supervisor/pais/anthropic-shim.yaml
+K rollout status deploy/anthropic-shim
+K apply -f supervisor/pais/claude-route.yaml
+sleep 30; K get inferencegatewayroute claude -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.message}{"\n"}{end}'
+K logs deploy/anthropic-shim     # GET /v1/models 200 = PAIS's check passed
+```
+
+Worked 2026-10-16 (route Ready; docs-agent-am on `claude` called check_vip
+through AgentMinder). The shim also drops `temperature`: Agent Builder sends
+it, Claude Haiku 5.5 refuses it ("deprecated for this model"). Removed the
+same day (route, shim, key Secret) until a team API key is assigned; the
+files stay, re-apply both.
+
+### OpenAI
+
+`supervisor/pais/openai-route.yaml`: engine `OpenAI`, base URL
+`https://api.openai.com` (PAIS adds `/v1`). No shim: OpenAI answers the
+`/v1/models` check with a bearer token.
+
+```sh
+K() { kubectl --context 172.17.10.2 -n se-pais-tp7mm "$@"; }
+read -rs "OKEY?OpenAI API key: "; echo
+curl -s https://api.openai.com/v1/models -H "Authorization: Bearer $OKEY" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sorted(m["id"] for m in d.get("data",[]) if m["id"].startswith(("gpt","o"))) or d)'
+K create secret generic openai-api-token --type=pais.vmware.com/api-token-credentials --from-literal=api_token="$OKEY"
+unset OKEY
+# set modelId in the file, then
+K apply -f supervisor/pais/openai-route.yaml
+sleep 30; K get inferencegatewayroute openai -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.message}{"\n"}{end}'
+```
 
 ## Status (2026-10-11)
 

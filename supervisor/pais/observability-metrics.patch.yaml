@@ -9,6 +9,15 @@
 # 2026-10-15 the 12 running PAIS pods requested 1.8 cores and ~4 GiB of the
 # 12000 MB reserved, so there is room, but watch for "parent resource pool is
 # insufficient" events after applying.
+#
+# Then restart the ingress pod, or the UI keeps Observability > Metrics locked
+# (lab, 2026-10-16): the UI reads /env.json, served by the pais-auth container
+# of pais-ingress-*, which loads its config (prometheusEnabled) only at start.
+# PAIS updates the ConfigMap, not the running process:
+#   kubectl --context 172.17.10.2 -n se-pais-tp7mm delete pod -l pais.vmware.com/component=ingress
+#   curl -sk https://172.19.0.25/env.json    # "prometheus_enabled": true
+# Applied 2026-10-16; after the ingress restart Observability > Metrics opened
+# (agents, MCP servers, per-agent queries and tokens).
 spec:
   observability:
     prometheusRuntime:

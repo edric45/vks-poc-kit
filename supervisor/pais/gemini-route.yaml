@@ -1,0 +1,37 @@
+# Gemini as a PAIS model, next to qwen-chat: an InferenceGatewayRoute sends
+# requests for routing name "gemini" to Google's API with our key. Nothing runs
+# in the lab (no VM, no node pool); agents pick "gemini" like a local model.
+#
+#   kubectl --context 172.17.10.2 apply -f supervisor/pais/gemini-route.yaml
+#   kubectl --context 172.17.10.2 -n se-pais-tp7mm get inferencegatewayroutes
+#
+# Engine GoogleOpenAI = Google's OpenAI-compatible API, base URL below
+# (Google's docs). The schema prefers GoogleVertexAI for Google Cloud and says
+# the compatibility layer "does not support all features of the official
+# OpenAI API"; it is the one whose URL is published, and it works with a free
+# AI Studio key.
+#
+# Not private: prompts and tool results go to Google. On the free tier Google
+# may use them to improve its products. Lab data only.
+#
+# The key, by hand (docs/pais.md, "Gemini"):
+#   Secret gemini-api-token, type pais.vmware.com/api-token-credentials, key api_token
+apiVersion: pais.vmware.com/v1alpha1
+kind: InferenceGatewayRoute
+metadata:
+  name: gemini
+  namespace: se-pais-tp7mm
+spec:
+  type: Completions
+  engine: GoogleOpenAI
+  matches:
+    routingName: gemini
+  backend:
+    httpBaseUrl: https://generativelanguage.googleapis.com/v1beta/openai
+    # A model your key can use: list them first (docs/pais.md).
+    modelId: REPLACE_GEMINI_MODEL
+    auth:
+      apiTokenRef:
+        name: gemini-api-token
+    tls:
+      verification: strict

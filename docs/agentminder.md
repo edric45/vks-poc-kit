@@ -291,6 +291,10 @@ k -n agentminder get pods -o jsonpath='{..image}' | tr ' ' '\n' | grep admin-svc
 curl -sk -o /dev/null -w '%{http_code}\n' "https://$HOST/default/.well-known/openid-configuration"   # 200
 ```
 
+After every `helm upgrade ssp`: re-apply the Observe console patch (the
+chart has no setting for it, Helm removes it):
+`k -n agentminder patch deploy ssp-ssp-observeconsole --patch-file se-pais-001/agentminder/observeconsole-lab-ca.patch.yaml`.
+
 Don't interrupt the ssp upgrade while the dataseed job runs (watch it with
 `k -n agentminder get pods -l job-name=ssp-ssp-dataseed-job -w`).
 
@@ -310,6 +314,7 @@ Don't interrupt the ssp upgrade while the dataseed job runs (watch it with
 | HTTPRoute not Accepted | `k -n agentminder describe httproute`; host must match the certificate and values |
 | login: "Too many user sessions" | admin console sessions per user hit the limit (default 3; factor log `allowed max user sessions: 3`). Pod restarts don't clear them (stored in the DB). Sign out from the user menu; or revoke them with the pre-seeded admin client, below |
 | login: "Application with the given id does not exist" | the browser replays an old login (e.g. after trying `mgmt-$HOST`); a new private window, then the console URL, not `/signin/` |
+| Observe console dashboards empty | `k -n agentminder logs deploy/ssp-ssp-observeconsole`: "SSP JWT validation error ... unable to verify the first certificate" = Node.js doesn't trust the lab CA when it fetches the issuer's keys; apply `observeconsole-lab-ca.patch.yaml` (NODE_OPTIONS=--use-system-ca + SSL_CERT_FILE; NODE_EXTRA_CA_CERTS is overwritten by the image's entry.sh). Telemetry check: `kubectl get --raw '/api/v1/namespaces/agentminder/pods/ssp-nats-0:8222/proxy/jsz?streams=true'` (TRACES, METRICS, AUDIT_EVENTS last_ts recent) |
 | login denied for a new admin | AdminLoginPolicy doesn't list the user ("Your own admin", step 4) |
 
 Revoke all of one user's sessions (the user id is in the factor log line).

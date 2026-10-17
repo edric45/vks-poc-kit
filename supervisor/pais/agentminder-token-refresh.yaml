@@ -1,0 +1,153 @@
+# Keeps the AgentMinder token of a PAIS MCP registration fresh.
+#
+# Why: a PAIS 3.0 MCP registration carries fixed headers only (no OAuth), and
+# AgentMinder's agent tokens last 1 hour. PAIS keeps a registration's secret
+# headers in a Secret in this namespace, mcp-server-headers-<registration id>,
+# key "headers" = [{"name": ..., "value": ..., "is_secret": true}] (lab,
+# 2026-10-16). Every 30 minutes this job mints a new token for the agent
+# (client_credentials, like the AgentMinder SDK) and rewrites that Secret.
+#
+#   registration lab-facts-agentminder (id 26c77a4b-...)  <-  agent pais-docs-agent
+#
+# Applied by hand to the Supervisor (namespace se-pais-tp7mm); runs as a
+# vSphere Pod. By hand first (docs/agentminder-agents.md, "Automating the token"):
+#   Secret agentminder-pais-docs-agent  keys clientId, clientSecret
+#   ConfigMap agentminder-lab-ca        key ca.crt (lab root CA)
+#
+# PAIS reads the Secret on every call: after the pasted token expired, one
+# run of this job made the agent's tool calls work again, with no re-save
+# (lab, 2026-10-16).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentminder-token-refresh
+  namespace: se-pais-tp7mm
+---
+# This one Secret only: the job can't read or change any other.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentminder-token-refresh
+  namespace: se-pais-tp7mm
+rules:
+- apiGroups: [""]
+  resources: [secrets]
+  resourceNames: [mcp-server-headers-26c77a4b-ecb7-4a1b-9ec1-4ba12fb69310]
+  verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentminder-token-refresh
+  namespace: se-pais-tp7mm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentminder-token-refresh
+subjects:
+- kind: ServiceAccount
+  name: agentminder-token-refresh
+  namespace: se-pais-tp7mm
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentminder-token-refresh
+  namespace: se-pais-tp7mm
+data:
+  refresh.py: |
+    """Mint an AgentMinder agent token and put it into a PAIS MCP header Secret.
+
+    Standard library only (no package index needed). Prints the token's
+    claims and lifetime, never the token.
+    """
+    import base64
+    import json
+    import os
+    import ssl
+    import urllib.parse
+    import urllib.request
+
+    SA = "/var/run/secrets/kubernetes.io/serviceaccount"
+
+    def read(path):
+        with open(path) as f:
+            return f.read().strip()
+
+    body = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": read("/creds/clientId"),
+        "client_secret": read("/creds/clientSecret"),
+        "resource": os.environ["ROUTE"],          # the token's aud: this gateway route only
+        "scope": "urn:iam:myscopes",              # every intent policy grants the agent
+    }).encode()
+    am_tls = ssl.create_default_context(cafile="/ca/ca.crt")
+    with urllib.request.urlopen(urllib.request.Request(os.environ["TOKEN_URL"], data=body),
+                                context=am_tls, timeout=30) as r:
+        tok = json.load(r)
+    access = tok["access_token"]
+    claims = json.loads(base64.urlsafe_b64decode(access.split(".")[1] + "=="))
+
+    # Same shape PAIS writes when the registration is saved.
+    headers = json.dumps([{"name": "Authorization", "value": "Bearer " + access, "is_secret": True}])
+    patch = json.dumps({"data": {"headers": base64.b64encode(headers.encode()).decode()}}).encode()
+    ns = read(SA + "/namespace")
+    req = urllib.request.Request(
+        f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/secrets/{os.environ['HEADERS_SECRET']}",
+        data=patch, method="PATCH",
+        headers={"Authorization": "Bearer " + read(SA + "/token"),
+                 "Content-Type": "application/merge-patch+json"})
+    with urllib.request.urlopen(req, context=ssl.create_default_context(cafile=SA + "/ca.crt"),
+                                timeout=30) as r:
+        r.read()
+    print(json.dumps({"updated": os.environ["HEADERS_SECRET"], "azp": claims.get("azp"),
+                      "scope": claims.get("scope"), "exp": claims.get("exp"),
+                      "expires_in": tok.get("expires_in")}))
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agentminder-token-refresh
+  namespace: se-pais-tp7mm
+spec:
+  # Tokens last 1 h: refresh at half-life, so one failed run doesn't break PAIS.
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: agentminder-token-refresh
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+          - name: refresh
+            image: docker.io/library/python:3.12.11-slim
+            command: [python, -u, /app/refresh.py]
+            env:
+            - {name: TOKEN_URL, value: "https://agentminder.172-19-0-31.sslip.io/default/oauth2/v1/token"}
+            - {name: ROUTE, value: "https://agentminder.172-19-0-31.sslip.io/default/aigateway/v1/mcp/YmEzM2RjODctYmZjNC00ODM2LWIxZGUtMTBjMzcyMGU0NzRi"}
+            - {name: HEADERS_SECRET, value: mcp-server-headers-26c77a4b-ecb7-4a1b-9ec1-4ba12fb69310}
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: [ALL]}
+            resources:
+              requests: {cpu: 100m, memory: 64Mi}
+              limits: {cpu: 200m, memory: 128Mi}
+            volumeMounts:
+            - {name: app, mountPath: /app, readOnly: true}
+            - {name: creds, mountPath: /creds, readOnly: true}
+            - {name: ca, mountPath: /ca, readOnly: true}
+          volumes:
+          - name: app
+            configMap: {name: agentminder-token-refresh}
+          - name: creds
+            secret: {secretName: agentminder-pais-docs-agent}
+          - name: ca
+            configMap: {name: agentminder-lab-ca}

@@ -1,0 +1,49 @@
+# Observe console: trust the lab CA, or every dashboard stays empty.
+#
+# Why: the console's Node.js backend validates the user's login token by
+# fetching AgentMinder's signing keys from the token's issuer,
+# https://agentminder.<ip>.sslip.io/default. That certificate is from the lab
+# CA (cert-manager selfsigned-root-ca), which Node.js doesn't trust, so every
+# query fails: "SSP JWT validation error ... unable to verify the first
+# certificate" (lab, 2026-10-17). Telemetry itself flows (NATS streams
+# TRACES, METRICS, AUDIT_EVENTS written and consumed).
+#
+# The chart (4.1.1) has no extra env or CA setting for the console, so this is a
+# patch on the Helm-managed Deployment: re-apply it after every `helm upgrade ssp`.
+# The CA comes from the Gateway's certificate Secret (key ca.crt), already in
+# this namespace.
+#
+#   kubectl --context se-pais-001:se-pais-001 -n agentminder patch deploy ssp-ssp-observeconsole \
+#     --patch-file se-pais-001/agentminder/observeconsole-lab-ca.patch.yaml
+#
+# Result (2026-10-17): dashboards load (AI Resource Server Operations: event
+# log with the PAIS agent's check_vip calls, tool latency, backend health).
+#
+# A customer with a publicly trusted certificate (or its CA in the image) does
+# not need this.
+spec:
+  template:
+    spec:
+      containers:
+      - name: ssp-observeconsole
+        env:
+        # Not NODE_EXTRA_CA_CERTS: the image's /etc/local/entry.sh sets it to
+        # /tmp/ca.crt (AgentMinder's internal ISK and ClickHouse CAs), replacing
+        # ours. --use-system-ca adds the store in SSL_CERT_FILE on top, so the
+        # internal CAs keep working (tested in the pod, 2026-10-17).
+        - name: NODE_OPTIONS
+          value: --use-system-ca
+        - name: SSL_CERT_FILE
+          value: /opt/lab-ca/ca.crt
+        - name: NODE_EXTRA_CA_CERTS
+          $patch: delete
+        volumeMounts:
+        - name: lab-ca
+          mountPath: /opt/lab-ca
+          readOnly: true
+      volumes:
+      - name: lab-ca
+        secret:
+          secretName: agentminder-tls
+          items:
+          - {key: ca.crt, path: ca.crt}

@@ -27,9 +27,23 @@ paste it in. Missions are off for the same reason (their credential expires
 too). This is the honest limit to state to a customer; production would put
 a broker (the SDK's sidecar mode) between PAIS and AgentMinder.
 
-Status: written 2026-10-16 from the SDK guide (agentminder-sdk 4.1.1) and
-Broadcom's 4.1 docs; **not run yet**. Console labels are quoted from the docs;
-where the console differs, follow the console.
+Status (lab, 2026-10-16): **A works**. PAIS agent docs-agent-am (qwen-chat,
+and Claude while the route existed) called check_vip through AgentMinder;
+the gateway log shows `MCP: tool call "check_vip" allowed on backend
+"lab-facts"`, agent pais-docs-agent, intent check_vip; tools/list filtered
+("1 kept, 2 removed": unbound list_vips hidden). Token refresh automated and
+tested. Step 7 (taking a tool away) works too. **B** not run yet. Differences from the
+console found on the way are in the steps below.
+
+Found on the way:
+- the console labels match the docs, except the policy wizard: Conditions are
+  context (IP, country, risk); who gets the policy is set afterwards, under
+  MEMBERS > **Grant** in the policy list
+- **Import Tools from MCP Server** times out: AgentMinder's admin service makes
+  that call, and lab-facts only admits the gateway pod. Add the bindings by
+  hand (**Add Agent Tool Binding**, **+ Create New Intent**, "Add to Catalog")
+- PAIS: Transport Streamable HTTP, TLS verification **None**, the token as a
+  **credential header**; PAIS resolves the sslip.io name fine
 
 ## Pieces
 
@@ -163,6 +177,16 @@ and the tool.
 The story: the platform team changes what an agent may do centrally, per
 tool, and every attempt is recorded, whatever the agent's builder configured.
 
+Result (lab, 2026-10-17): with `get_runbook_tip` removed from the grant, the
+call was refused within a minute, at the gateway, before lab-facts:
+`MCP: tool call "runbook_tip" denied on backend "lab-facts": policy/authorize`
+(403, event `aigateway.mcp.tool.deny`, reason "Computed allowed scopes '[]'
+does not contain requested scopes: '[urn:iam:agent:intent:get_runbook_tip]'").
+The Observe console shows it (Tools Called By Server: Denied; Event Log).
+PAIS shows only "unhandled errors in a TaskGroup", not the reason: in a demo,
+keep the Observe console next to the chat. Log noise, harmless: "failed to
+open SSE stream ... returned 405" (lab-facts has no optional GET stream).
+
 ## If it fails
 
 | Symptom | Look at |
@@ -174,6 +198,48 @@ tool, and every attempt is recorded, whatever the agent's builder configured.
 | curl test 502/503 | gateway can't reach lab-facts: network policy (step 1); `k -n agentminder logs deploy/ssp-ssp-aigateway --all-containers --tail=50` |
 | PAIS test connection fails | DNS/route from the Supervisor to the sslip.io name; Verify TLS off |
 | PAIS worked, then 401 | the token expired: step 4 again, update the header in PAIS |
+
+## Automating the token
+
+PAIS keeps a registration's secret headers in a Secret in se-pais-tp7mm,
+`mcp-server-headers-<registration id>` (the id is in the PAIS URL
+`#/mcp/mcp-servers/<id>`), key `headers` =
+`[{"name": "Authorization", "value": "Bearer …", "is_secret": true}]`.
+`supervisor/pais/agentminder-token-refresh.yaml` is a CronJob there that mints
+a new token every 30 minutes and rewrites that one Secret (its Role allows
+get/patch on that name only). Standard-library Python; prints claims, never
+the token.
+
+```sh
+K() { kubectl --context 172.17.10.2 -n se-pais-tp7mm "$@"; }
+read -r "ACID?pais-docs-agent client ID: "; read -rs "ASEC?pais-docs-agent client secret: "; echo
+K create secret generic agentminder-pais-docs-agent --from-literal=clientId="$ACID" --from-literal=clientSecret="$ASEC"
+unset ASEC
+K create configmap agentminder-lab-ca \
+  --from-literal=ca.crt="$(kubectl --context se-pais-001:se-pais-001 -n cert-manager get secret selfsigned-root-ca -o jsonpath='{.data.ca\.crt}' | base64 -d)"
+K apply -f supervisor/pais/agentminder-token-refresh.yaml
+# one run now instead of waiting for the schedule
+K create job --from=cronjob/agentminder-token-refresh agentminder-token-refresh-now
+K logs -f job/agentminder-token-refresh-now     # {"updated": ..., "azp": ..., "expires_in": 3600}
+```
+
+**Result (2026-10-16):** at 19:29 AgentMinder rejected the expired token
+(`authenticate: JWT validation failed 401`; PAIS: "The specified tool is
+currently not available"). One run of the job, and the next call was
+allowed: PAIS reads the Secret on every call. Then un-suspend the schedule:
+`K patch cronjob agentminder-token-refresh -p '{"spec":{"suspend":false}}'`.
+AgentMinder side note: after the 401 its policy engine also logs
+"AuthZEN PDP rejected request as invalid (400)" and the gateway answers 503,
+not a plain 401.
+
+**How it was tested:** let the pasted token expire (a tool call from the
+PAIS agent then fails, gateway log 401), run the job, ask again. Works = PAIS
+reads the Secret on each call, and the automation is complete. Still fails =
+PAIS caches headers when the registration is saved; then re-save the
+registration (EDIT DETAILS, unchanged) to see whether that reloads them.
+
+Another registration: copy the file, change the agent's Secret, the route and
+`HEADERS_SECRET` (in the Role too).
 
 ## B. A custom agent with the SDK (am-docs-agent)
 
