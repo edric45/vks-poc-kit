@@ -32,6 +32,25 @@ subjects:
   name: kubernetes-mcp
   namespace: mcp
 ---
+# Settings as a config file: cluster_auth_mode exists only there (v0.0.67).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-mcp-config
+  namespace: mcp
+data:
+  config.toml: |
+    port = "8080"                        # Streamable HTTP on /mcp
+    stateless = true                     # no session affinity needed behind a gateway
+    toolsets = ["core", "helm"]          # pods, events, resources (incl. writes) + Helm; no config tools
+    cluster_provider_strategy = "in-cluster"
+    # Default "passthrough" forwards the caller's Authorization header to the
+    # Kubernetes API. AgentMinder's gateway forwards the agent's AgentMinder
+    # token, which the cluster rejects (401, "Authentication failed - check
+    # cluster credentials", lab 2026-10-18). "kubeconfig" = always use this
+    # pod's own service account. The caller's identity is AgentMinder's job.
+    cluster_auth_mode = "kubeconfig"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -46,6 +65,8 @@ spec:
       # No mcp.lab/role: server: agentgateway must not reach a cluster-admin server.
       # mcp.lab/gateway: agentminder = admitted by kubernetes-mcp-from-agentminder.
       labels: {app: kubernetes-mcp, mcp.lab/gateway: agentminder}
+      annotations:
+        config-version: "1"   # bump when config.toml changes (ConfigMap edits don't restart the pod)
     spec:
       serviceAccountName: kubernetes-mcp
       securityContext:
@@ -55,11 +76,7 @@ spec:
       containers:
       - name: server
         image: quay.io/containers/kubernetes_mcp_server:v0.0.67
-        args:
-        - --port=8080                  # Streamable HTTP on /mcp
-        - --stateless                  # no session affinity needed behind a gateway
-        - --toolsets=core,helm         # pods, events, resources (incl. writes) + Helm; no config tools
-        - --cluster-provider=in-cluster
+        args: [--config, /etc/kubernetes-mcp-server/config.toml]
         ports:
         - {name: mcp, containerPort: 8080}
         readinessProbe:
@@ -71,6 +88,11 @@ spec:
         resources:
           requests: {cpu: 50m, memory: 64Mi}
           limits: {memory: 256Mi}
+        volumeMounts:
+        - {name: config, mountPath: /etc/kubernetes-mcp-server, readOnly: true}
+      volumes:
+      - name: config
+        configMap: {name: kubernetes-mcp-config}
 ---
 apiVersion: v1
 kind: Service

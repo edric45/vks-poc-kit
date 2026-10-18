@@ -1,0 +1,91 @@
+# Keeps the AgentMinder token of the PAIS registration "kubernetes-agentminder"
+# fresh (agent pais-k8s-agent, resource server "kubernetes"). Same mechanism as
+# agentminder-token-refresh.yaml, which explains why; this file adds only what
+# differs and reuses its script (ConfigMap agentminder-token-refresh) and the
+# lab CA (ConfigMap agentminder-lab-ca). Apply that file first.
+#
+#   registration kubernetes-agentminder (id 6f05b9f5-...)  <-  agent pais-k8s-agent
+#
+# Applied by hand to the Supervisor (namespace se-pais-tp7mm). By hand first:
+#   Secret agentminder-pais-k8s-agent  keys clientId, clientSecret
+#
+# Own ServiceAccount and Role: each refresher can rewrite only its own
+# registration's Secret.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentminder-token-refresh-k8s
+  namespace: se-pais-tp7mm
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentminder-token-refresh-k8s
+  namespace: se-pais-tp7mm
+rules:
+- apiGroups: [""]
+  resources: [secrets]
+  resourceNames: [mcp-server-headers-6f05b9f5-6b93-4aec-bd0e-d0f34164cc1c]
+  verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentminder-token-refresh-k8s
+  namespace: se-pais-tp7mm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentminder-token-refresh-k8s
+subjects:
+- kind: ServiceAccount
+  name: agentminder-token-refresh-k8s
+  namespace: se-pais-tp7mm
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agentminder-token-refresh-k8s
+  namespace: se-pais-tp7mm
+spec:
+  # Offset from the other refresher (*/30 at :00/:30), so they don't run together.
+  schedule: "15,45 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: agentminder-token-refresh-k8s
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+          - name: refresh
+            image: docker.io/library/python:3.12.11-slim
+            command: [python, -u, /app/refresh.py]
+            env:
+            - {name: TOKEN_URL, value: "https://agentminder.172-19-0-31.sslip.io/default/oauth2/v1/token"}
+            - {name: ROUTE, value: "https://agentminder.172-19-0-31.sslip.io/default/aigateway/v1/mcp/OTQ5ZjFhNTQtYTZlZi00OWRiLThmYTYtNjMzNjY3YWNlNjlh"}
+            - {name: HEADERS_SECRET, value: mcp-server-headers-6f05b9f5-6b93-4aec-bd0e-d0f34164cc1c}
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: [ALL]}
+            resources:
+              requests: {cpu: 100m, memory: 64Mi}
+              limits: {cpu: 200m, memory: 128Mi}
+            volumeMounts:
+            - {name: app, mountPath: /app, readOnly: true}
+            - {name: creds, mountPath: /creds, readOnly: true}
+            - {name: ca, mountPath: /ca, readOnly: true}
+          volumes:
+          - name: app
+            configMap: {name: agentminder-token-refresh}
+          - name: creds
+            secret: {secretName: agentminder-pais-k8s-agent}
+          - name: ca
+            configMap: {name: agentminder-lab-ca}
