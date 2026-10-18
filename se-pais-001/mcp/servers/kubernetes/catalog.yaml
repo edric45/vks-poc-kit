@@ -7,14 +7,16 @@ metadata:
   labels: {mcp.lab/catalog: "true"}
 data:
   name: kubernetes
-  description: Read-only view of se-pais-001 (pods, logs, events, resources) in namespaces pais-db and mcp.
+  description: Read and change se-pais-001 (pods, logs, events, resources, Helm releases) in namespaces pais-db and mcp.
   owner: SE lab (vks-poc-kit)
   source: containers/kubernetes-mcp-server v0.0.67, Apache-2.0 (Red Hat-led community project)
-  access: read-only (--read-only, RBAC view role, no Secrets)
+  access: read-write (RBAC edit role in pais-db and mcp, Secrets included; Helm)
   gatewayTarget: k8s
   endpoint: http://kubernetes-mcp.mcp.svc.cluster.local:8080/mcp
   tools: |
-    pods_list_in_namespace, pods_get, pods_log, resources_list, resources_get, events_list, ...
+    read: pods_list_in_namespace, pods_get, pods_log, resources_list, resources_get, events_list, helm_list, ...
+    write: resources_create_or_update, resources_delete, resources_scale, pods_run, pods_exec, pods_delete,
+           helm_install, helm_uninstall
     (all-namespace and node tools fail by design: no rights outside pais-db and mcp)
   plans: |
-    full: all tools (all read-only)
+    full: all tools, read and write (ops agent only)

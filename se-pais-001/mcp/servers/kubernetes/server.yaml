@@ -1,9 +1,17 @@
 # kubernetes-mcp-server (containers/kubernetes-mcp-server): Kubernetes as MCP
-# tools, for the "ops" agent. Three guards, each enough on its own:
-#   --read-only     the server does not offer create/update/delete tools
-#   RBAC            the built-in "view" role, and only in pais-db and mcp
-#                   ("view" excludes Secrets); nothing cluster-wide
+# tools, for the "ops" agent. READ AND WRITE since 2026-10-18 (user's choice):
+# create/update/delete/scale resources, run/exec/delete pods, Helm
+# install/uninstall, in pais-db and mcp. What still limits it:
+#   RBAC            the built-in "edit" role, only in pais-db and mcp; nothing
+#                   cluster-wide, and "edit" cannot change Roles/RoleBindings,
+#                   so the agent cannot give itself more rights
 #   agentgateway    only the ops agent's key may call these tools
+#   ArgoCD          self-heal on the mcp app reverts changes to git-managed
+#                   objects there (gateway config, network policies)
+# What it can now do, on purpose or by mistake: read and change Secrets in both
+# namespaces (e.g. the PAIS database password in pais-db), delete the PAIS
+# database, change agentgateway's keys/rules until ArgoCD reverts them.
+# Back to read-only: "view" instead of "edit" below, and --read-only.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -13,12 +21,12 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: kubernetes-mcp-view
+  name: kubernetes-mcp-edit
   namespace: pais-db
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: view
+  name: edit
 subjects:
 - kind: ServiceAccount
   name: kubernetes-mcp
@@ -27,12 +35,12 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: kubernetes-mcp-view
+  name: kubernetes-mcp-edit
   namespace: mcp
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: view
+  name: edit
 subjects:
 - kind: ServiceAccount
   name: kubernetes-mcp
@@ -62,9 +70,8 @@ spec:
         image: quay.io/containers/kubernetes_mcp_server:v0.0.67
         args:
         - --port=8080                  # Streamable HTTP on /mcp
-        - --read-only
         - --stateless                  # no session affinity needed behind a gateway
-        - --toolsets=core              # pods, events, resources; no helm/config tools
+        - --toolsets=core,helm         # pods, events, resources (incl. writes) + Helm; no config tools
         - --cluster-provider=in-cluster
         ports:
         - {name: mcp, containerPort: 8080}
