@@ -7,16 +7,16 @@ metadata:
   labels: {mcp.lab/catalog: "true"}
 data:
   name: kubernetes
-  description: Read and change se-pais-001 (pods, logs, events, resources, Helm releases) in namespaces pais-db and mcp.
+  description: Full control of se-pais-001 (cluster-admin), governed per tool by AgentMinder.
   owner: SE lab (vks-poc-kit)
   source: containers/kubernetes-mcp-server v0.0.67, Apache-2.0 (Red Hat-led community project)
-  access: read-write (RBAC edit role in pais-db and mcp, Secrets included; Helm)
-  gatewayTarget: k8s
+  access: cluster-admin; only through AgentMinder's AI Gateway (resource server kubernetes), not agentgateway
+  gatewayTarget: none (AgentMinder only)
   endpoint: http://kubernetes-mcp.mcp.svc.cluster.local:8080/mcp
   tools: |
     read: pods_list_in_namespace, pods_get, pods_log, resources_list, resources_get, events_list, helm_list, ...
     write: resources_create_or_update, resources_delete, resources_scale, pods_run, pods_exec, pods_delete,
            helm_install, helm_uninstall
-    (all-namespace and node tools fail by design: no rights outside pais-db and mcp)
+    (AgentMinder intents decide which of these an agent may call)
   plans: |
-    full: all tools, read and write (ops agent only)
+    via AgentMinder policy (intents k8s_read, k8s_write, k8s_delete, k8s_exec, k8s_helm)

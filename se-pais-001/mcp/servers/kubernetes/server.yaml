@@ -1,17 +1,18 @@
 # kubernetes-mcp-server (containers/kubernetes-mcp-server): Kubernetes as MCP
-# tools, for the "ops" agent. READ AND WRITE since 2026-10-18 (user's choice):
-# create/update/delete/scale resources, run/exec/delete pods, Helm
-# install/uninstall, in pais-db and mcp. What still limits it:
-#   RBAC            the built-in "edit" role, only in pais-db and mcp; nothing
-#                   cluster-wide, and "edit" cannot change Roles/RoleBindings,
-#                   so the agent cannot give itself more rights
-#   agentgateway    only the ops agent's key may call these tools
-#   ArgoCD          self-heal on the mcp app reverts changes to git-managed
-#                   objects there (gateway config, network policies)
-# What it can now do, on purpose or by mistake: read and change Secrets in both
-# namespaces (e.g. the PAIS database password in pais-db), delete the PAIS
-# database, change agentgateway's keys/rules until ArgoCD reverts them.
-# Back to read-only: "view" instead of "edit" below, and --read-only.
+# tools, CLUSTER-ADMIN on se-pais-001 since 2026-10-18 (user's choice), for the
+# AgentMinder-governed Kubernetes agent (docs/agentminder-agents.md):
+# read, create/update/delete/scale, run/exec pods, Helm, in every namespace.
+#
+# Reachable ONLY through AgentMinder's AI Gateway: the pod has no
+# mcp.lab/role: server label (agentgateway may not call it), and
+# gateway/networkpolicy.yaml kubernetes-mcp-from-agentminder lets in only
+# AgentMinder's gateway (and its admin service, for tool discovery). Which tools
+# an agent may actually use is AgentMinder's policy, per call.
+#
+# What this server can do if AgentMinder's policy allows it: anything on the
+# cluster, including AgentMinder itself (its pods, database, namespace) and
+# RBAC. ArgoCD self-heal reverts changes to objects kept in git; nothing else.
+# Back to limited: replace the ClusterRoleBinding with RoleBindings (view/edit).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -19,28 +20,13 @@ metadata:
   namespace: mcp
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
-  name: kubernetes-mcp-edit
-  namespace: pais-db
+  name: kubernetes-mcp-cluster-admin
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: edit
-subjects:
-- kind: ServiceAccount
-  name: kubernetes-mcp
-  namespace: mcp
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: kubernetes-mcp-edit
-  namespace: mcp
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: edit
+  name: cluster-admin
 subjects:
 - kind: ServiceAccount
   name: kubernetes-mcp
@@ -57,8 +43,9 @@ spec:
     matchLabels: {app: kubernetes-mcp}
   template:
     metadata:
-      # mcp.lab/role: server = reachable only from agentgateway (gateway/networkpolicy.yaml)
-      labels: {app: kubernetes-mcp, mcp.lab/role: server}
+      # No mcp.lab/role: server: agentgateway must not reach a cluster-admin server.
+      # mcp.lab/gateway: agentminder = admitted by kubernetes-mcp-from-agentminder.
+      labels: {app: kubernetes-mcp, mcp.lab/gateway: agentminder}
     spec:
       serviceAccountName: kubernetes-mcp
       securityContext:

@@ -63,3 +63,26 @@ spec:
         matchLabels: {app: ssp-aigateway}
     ports:
     - {protocol: TCP, port: 8000}
+---
+# kubernetes-mcp runs as cluster-admin: only AgentMinder may reach it. Its
+# gateway carries the agents' tool calls (each checked against AgentMinder's
+# policy); its admin service lists the tools when a resource server is set up
+# ("Import Tools from MCP Server"). agentgateway is not admitted.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubernetes-mcp-from-agentminder
+  namespace: mcp
+spec:
+  podSelector:
+    matchLabels: {app: kubernetes-mcp}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels: {kubernetes.io/metadata.name: agentminder}
+      podSelector:
+        matchExpressions:
+        - {key: app, operator: In, values: [ssp-aigateway, ssp-admin]}
+    ports:
+    - {protocol: TCP, port: 8080}

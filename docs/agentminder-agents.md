@@ -241,6 +241,43 @@ registration (EDIT DETAILS, unchanged) to see whether that reloads them.
 Another registration: copy the file, change the agent's Secret, the route and
 `HEADERS_SECRET` (in the Role too).
 
+## C. A Kubernetes agent with full access, governed by AgentMinder
+
+kubernetes-mcp runs as **cluster-admin** on se-pais-001 (2026-10-18, user's
+choice) and is reachable **only through AgentMinder**: its pod lacks the
+`mcp.lab/role: server` label, agentgateway's `k8s` target and the ops agent's
+key are gone, and network policy `kubernetes-mcp-from-agentminder` admits only
+AgentMinder's gateway and admin service (the latter for tool discovery).
+AgentMinder's policy is then the only thing between an agent and the cluster,
+including AgentMinder's own namespace.
+
+1. PAIS: delete ops-agent and its `lab-gateway-ops` registration (its key no
+   longer works).
+2. AgentMinder: **AI Resource Servers > + Add**: `kubernetes`, MCP Server Endpoint
+   `http://kubernetes-mcp.mcp.svc.cluster.local:8080/mcp`; Primary Audience = its
+   AI Gateway-as-a-Service URL (View Setup). **Import Tools from MCP Server**
+   (works here: the admin service is admitted), and bind the tools to intents:
+   | intent | tools |
+   |---|---|
+   | `k8s_read` | `*_list`, `*_get`, `pods_log`, `events_list`, `pods_top`, `nodes_*`, `helm_list` |
+   | `k8s_write` | `resources_create_or_update`, `resources_scale` |
+   | `k8s_delete` | `resources_delete`, `pods_delete` |
+   | `k8s_exec` | `pods_exec`, `pods_run` |
+   | `k8s_helm` | `helm_install`, `helm_uninstall` |
+3. AgentMinder: AI Agent `pais-k8s-agent` (Autonomous, missions off) and a
+   policy on the `kubernetes` resource server granting the intents you want;
+   MEMBERS > Grant > pais-k8s-agent.
+4. Token: mint as in step 4 of A, with this resource server's route; then a
+   second token refresher (copy `supervisor/pais/agentminder-token-refresh.yaml`:
+   other names, the agent's credentials Secret, this route, the new
+   registration's `mcp-server-headers-<id>` in env and Role).
+5. PAIS: register `kubernetes-agentminder` (route, credential header, TLS
+   None), approve the tools, create the agent.
+
+Demo: grant `k8s_read` + `k8s_write`, not `k8s_delete`/`k8s_exec`; the agent
+can inspect and fix a Deployment but a delete or exec is refused at the
+gateway (Observe console: Denied). Then flip one intent live.
+
 ## B. A custom agent with the SDK (am-docs-agent)
 
 The agent PAIS can't be (yet): short-lived tokens fetched by the SDK, a

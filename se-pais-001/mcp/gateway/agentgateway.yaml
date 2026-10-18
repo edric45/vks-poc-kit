@@ -7,7 +7,9 @@
 # server needs a target here; a new consumer needs a key hash and a rule.
 #
 # Who may call what (one agent per job, docs/observability.md):
-#   ops agent       every tool of every server (all servers are read-only)
+#   (kubernetes-mcp is NOT here: it runs as cluster-admin since 2026-10-18 and
+#   is reachable only through AgentMinder's gateway, docs/agentminder-agents.md.
+#   The ops agent and its key were removed with it.)
 #   docs agent      labfacts: check_vip, runbook_tip; argocd: list_applications,
 #                   get_application. Other tools are not even listed to it.
 #   gitops agent    every argocd tool (read-only: MCP_READ_ONLY on the server)
@@ -20,7 +22,6 @@
 # Tested 2026-10-12 with the v1.6.0 binary: no key or a wrong key -> 401.
 #
 # Keys: only their SHA-256 hashes are here (public repo). Make a key pair:
-#   OPS_KEY=$(openssl rand -hex 32);  printf %s "$OPS_KEY"  | shasum -a 256
 #   DOCS_KEY=$(openssl rand -hex 32); printf %s "$DOCS_KEY" | shasum -a 256
 #   (same for GITOPS_KEY and CONCIERGE_KEY)
 # put each hash below after "sha256:", and the keys themselves only into the
@@ -74,8 +75,6 @@ data:
               location:
                 header: {name: Authorization, prefix: "Bearer "}
               keys:
-              - keyHash: "sha256:7e19db9c9fde316d84b971487a93057a3ca335414d7ef1e38584c558a18ae77c"
-                metadata: {agent: ops}
               - keyHash: "sha256:7372ef83b232ee8f728ac4ead7b87936fa7731705bfec24b3fda091e0b0bc5b0"
                 metadata: {agent: docs}
               # Placeholders until real keys are made (see the top of this file).
@@ -85,7 +84,6 @@ data:
                 metadata: {agent: concierge}
             mcpAuthorization:
               rules:
-              - allow: 'apiKey.agent == "ops"'
               - allow: 'apiKey.agent == "docs" && mcp.tool.target == "labfacts" && mcp.tool.name in ["check_vip", "runbook_tip"]'
               - allow: 'apiKey.agent == "docs" && mcp.tool.target == "argocd" && mcp.tool.name in ["list_applications", "get_application"]'
               - allow: 'apiKey.agent == "gitops" && mcp.tool.target == "argocd"'
@@ -97,8 +95,6 @@ data:
               statefulMode: stateless
               prefixMode: always
               targets:
-              - name: k8s
-                mcp: {host: "http://kubernetes-mcp.mcp.svc.cluster.local:8080/mcp"}
               - name: labfacts
                 mcp: {host: "http://lab-facts.mcp.svc.cluster.local:8000/mcp"}
               - name: argocd
@@ -120,7 +116,7 @@ spec:
       labels: {app: agentgateway}
       annotations:
         # Restart the pod when the config (keys, rules) changes.
-        config-version: "4"
+        config-version: "5"
     spec:
       securityContext:
         runAsNonRoot: true
